@@ -2,19 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-import * as pdfjsLib from 'pdfjs-dist';
+// Removed pdfjs-dist import to prevent Vercel build crashes
 import { 
   BookOpen, Calendar, CheckCircle2, Clock, LayoutDashboard, 
   Lightbulb, Moon, Settings, Sun, Target, TrendingUp, 
   Upload, Plus, Trash2, Calculator, ChevronLeft, ChevronRight, Quote, RefreshCw,
-  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Pause, ListTodo, CheckSquare, Cloud, AlertTriangle
+  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Pause
 } from 'lucide-react';
-
-// ==========================================
-// CRITICAL FIX: Remote PDF Worker
-// This prevents Vercel from crashing the Quizzer Maker tab by bypassing local build limits.
-// ==========================================
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
@@ -66,7 +60,7 @@ const profileStatuses = [
 ];
 
 // ==========================================
-// ERROR BOUNDARY (Prevents White Screen of Death)
+// ERROR BOUNDARY (Catches white screens)
 // ==========================================
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -80,9 +74,9 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="p-12 text-center flex flex-col items-center justify-center h-full">
-          <AlertTriangle size={64} className="text-red-500 mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Oops! Something went wrong in this tab.</h2>
-          <p className="text-gray-500 mb-6 max-w-md">An unexpected error occurred while loading this view. Please try returning to the dashboard or refreshing the page.</p>
+          <X size={64} className="text-red-500 mb-4" />
+          <h2 className="text-2xl font-bold mb-2">Oops! Something went wrong.</h2>
+          <p className="text-gray-500 mb-6 max-w-md">An unexpected error occurred while loading this view.</p>
           <button onClick={() => window.location.reload()} className="px-6 py-3 bg-[#d86d9c] text-white rounded-xl font-bold hover:opacity-90">Reload Page</button>
         </div>
       );
@@ -99,7 +93,6 @@ export default function App() {
   const [darkMode, setDarkMode] = useLocalStorage('xeia_darkmode', false);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // Core Data States
   const [profile, setProfile] = useLocalStorage('xeia_profile', { 
     name: 'Xeia', gender: '', age: '', yearLevel: 'Reviewee', 
     subtitle: "Let's crush those CPA goals today.", photo: '', 
@@ -112,7 +105,6 @@ export default function App() {
   const [gradesData, setGradesData] = useLocalStorage('xeia_grades', {}); 
   const [calendarEvents, setCalendarEvents] = useLocalStorage('xeia_calendar', []);
   
-  // Streak & Daily Reset Logic
   const [streak, setStreak] = useLocalStorage('xeia_streak', 0);
   const [totalDaysLogged, setTotalDaysLogged] = useLocalStorage('xeia_totalDays', 0);
   const [activityData, setActivityData] = useLocalStorage('xeia_activity', Array.from({ length: 42 }, () => 0));
@@ -120,7 +112,6 @@ export default function App() {
   const [lastStudyDate, setLastStudyDate] = useLocalStorage('xeia_lastStudy', null);
   const [isFrozen, setIsFrozen] = useLocalStorage('xeia_isFrozen', true);
 
-  // Global Timer States (Keeps running when switching tabs)
   const [timerInitialTime, setTimerInitialTime] = useLocalStorage('xeia_timerInit', 25 * 60);
   const [timerTimeLeft, setTimerTimeLeft] = useLocalStorage('xeia_timerLeft', 25 * 60);
   const [timerSessionElapsed, setTimerSessionElapsed] = useLocalStorage('xeia_timerElapsed', 0);
@@ -134,7 +125,6 @@ export default function App() {
   ]);
   const [currentQuote, setCurrentQuote] = useState(quotes[0]);
 
-  // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -143,7 +133,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Dark Mode Applicator
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -154,7 +143,6 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Daily Reset check
   useEffect(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     if (lastStudyDate !== todayStr && !isFrozen) {
@@ -164,7 +152,6 @@ export default function App() {
 
   const hasStudiedToday = lastStudyDate === new Date().toISOString().split('T')[0] && !isFrozen;
 
-  // Cloud Database Handlers
   const saveToCloud = async () => {
     if (!user) return alert("Sign in with Google to sync!");
     try {
@@ -197,7 +184,6 @@ export default function App() {
     }
   };
 
-  // Helper Actions
   const changeQuote = () => setCurrentQuote(quotes[Math.floor(Math.random() * quotes.length)]);
   const addQuote = (newQuote) => { setQuotes([...quotes, newQuote]); setCurrentQuote(newQuote); };
 
@@ -230,7 +216,6 @@ export default function App() {
     }
   };
 
-  // Global Timer Engine
   useEffect(() => {
     let interval = null;
     if (timerIsRunning && timerTimeLeft > 0) {
@@ -540,7 +525,7 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
         <div className={`p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border shadow-sm ${darkMode ? 'bg-blue-900/20 border-blue-800/50' : 'bg-blue-50 border-blue-200'}`}>
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-full ${darkMode ? 'bg-blue-800/50 text-blue-400' : 'bg-blue-200/50 text-blue-600'}`}>
-              <Cloud size={20} />
+              <Upload size={20} />
             </div>
             <div>
               <p className={`font-bold text-sm ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>Don't lose your progress!</p>
@@ -1121,8 +1106,8 @@ function TasksView({ darkMode, tasks, setTasks, subjects, colors }) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <h2 className="text-3xl font-bold">Tasks</h2>
         <div className={`flex space-x-1 p-1 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
-           <button onClick={() => setTab('todo')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'todo' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><ListTodo size={16} /> To-Do</button>
-           <button onClick={() => setTab('done')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'done' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><CheckSquare size={16} /> Completed</button>
+           <button onClick={() => setTab('todo')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'todo' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><BookOpen size={16} /> To-Do</button>
+           <button onClick={() => setTab('done')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'done' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><CheckCircle2 size={16} /> Completed</button>
         </div>
       </div>
 
@@ -1578,7 +1563,7 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
                       <input type="number" value={item.weight} onChange={e => handleStudentChange('midterms', item.id, 'weight', e.target.value)} className={`w-12 px-1 sm:px-2 py-2 text-center rounded-lg border text-sm ${inputBg}`} />
                       <span className="text-gray-400 font-bold text-xs">%</span>
                     </div>
-                    <button onClick={() => removeStudentItem('midterms', item.id)} className="text-gray-400 hover:text-red-50 transition-colors ml-1"><Trash2 size={18}/></button>
+                    <button onClick={() => removeStudentItem('midterms', item.id)} className="text-gray-400 hover:text-red-500 transition-colors ml-1"><Trash2 size={18}/></button>
                   </div>
                 ))}
               </div>
@@ -1705,6 +1690,430 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// --- Quizzer View ---
+function QuizzerView({ darkMode, colors }) {
+  const [step, setStep] = useState('upload'); 
+  const [isScanning, setIsScanning] = useState(false);
+  const [questions, setQuestions] = useState([]);
+  const [currentQ, setCurrentQ] = useState(0);
+  const [userAnswers, setUserAnswers] = useState({});
+  const [progress, setProgress] = useState(0);
+  
+  const [quizStartTime, setQuizStartTime] = useState(null);
+  const [timeTaken, setTimeTaken] = useState(0);
+
+  // Dynamic Injection of PDFJS to bypass Vercel restrictions
+  const loadPdfJs = async () => {
+    if (window.pdfjsLib) return window.pdfjsLib;
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      script.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      };
+      script.onerror = () => reject(new Error("Failed to load PDF.js"));
+      document.head.appendChild(script);
+    });
+  };
+
+  const extractTextFromPdf = async (file) => {
+    try {
+      const pdfLib = await loadPdfJs();
+      const data = await file.arrayBuffer();
+      const pdf = await pdfLib.getDocument({ data }).promise;
+      let fullText = '';
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        setProgress(Math.round((i / pdf.numPages) * 100));
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        
+        const pageText = textContent.items.map(item => item.str).join(' ')
+          .replace(/downloaded by[^\n]*/ig, '')
+          .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '') 
+          .replace(/studocu/ig, '')
+          .replace(/page\s*\d+/ig, '')
+          .replace(/granof[^\n]*/ig, '')
+          .replace(/iomoarcpsd[^\n]*/ig, '')
+          .replace(/([a-dA-D]\.)/g, '\n$1') 
+          .replace(/(\d+\.)/g, '\n$1'); 
+          
+        fullText += pageText + '\n\n';
+      }
+      return fullText;
+    } catch (error) {
+      console.error("PDF processing error:", error);
+      throw new Error("Failed to process PDF.");
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
+      alert("Error: The Quizzer Maker currently only supports PDF Document test banks.");
+      return;
+    }
+
+    setIsScanning(true);
+    setStep('scanning');
+
+    try {
+      const extractedText = await extractTextFromPdf(file);
+      const extractedQuestions = parseTextIntoQuestions(extractedText);
+      setQuestions(extractedQuestions);
+      setStep('preview');
+    } catch (error) {
+      console.error("Scanning failed:", error);
+      alert(error.message || "Failed to scan file. Ensure it is a valid PDF.");
+      setStep('upload');
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const parseTextIntoQuestions = (rawText) => {
+    const junkFilters = [
+      /downloaded by/i,
+      /studocu/i,
+      /iomoarcpsd/i,
+      /testbank/i,
+      /page\s*\d+/i,
+      /granof/i 
+    ];
+
+    const lines = rawText.split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .filter(line => !junkFilters.some(regex => regex.test(line)));
+
+    let parsedQuestions = [];
+    let currentQuestion = null;
+
+    lines.forEach(line => {
+      if (/^\d+\./.test(line)) {
+        if (currentQuestion && currentQuestion.options.length > 0) parsedQuestions.push(currentQuestion);
+        currentQuestion = { id: Date.now() + Math.random(), text: line, options: [], correctIdx: 0 };
+      } 
+      else if (/^[A-D]\./i.test(line) && currentQuestion) {
+        currentQuestion.options.push(line);
+      } 
+      else if (currentQuestion && currentQuestion.options.length === 0) {
+        currentQuestion.text += " " + line;
+      }
+    });
+    
+    if (currentQuestion && currentQuestion.options.length > 0) parsedQuestions.push(currentQuestion);
+    
+    return parsedQuestions.length > 0 ? parsedQuestions : [{ 
+      id: 1, 
+      text: "Could not detect standard formatting. Ensure questions start with numbers and choices with A/B/C/D.", 
+      options: ["Retry Upload"], 
+      correctIdx: 0 
+    }];
+  };
+
+  // --- Safe Immutability State Updates ---
+  const updateQuestionText = (qIndex, newText) => {
+    setQuestions(prev => prev.map((q, i) => i === qIndex ? { ...q, text: newText } : q));
+  };
+
+  const updateOptionText = (qIndex, optIndex, newText) => {
+    setQuestions(prev => prev.map((q, i) => {
+      if (i === qIndex) {
+        const newOptions = [...q.options];
+        newOptions[optIndex] = newText;
+        return { ...q, options: newOptions };
+      }
+      return q;
+    }));
+  };
+
+  const handleSetCorrectAnswer = (qIndex, optIndex) => {
+    setQuestions(prev => prev.map((q, i) => i === qIndex ? { ...q, correctIdx: optIndex } : q));
+  };
+
+  const addOption = (qIndex) => {
+    setQuestions(prev => prev.map((q, i) => i === qIndex ? { ...q, options: [...q.options, "New Option"] } : q));
+  };
+
+  const removeOption = (qIndex, optIndex) => {
+    setQuestions(prev => prev.map((q, i) => {
+      if (i === qIndex) {
+        const newOptions = q.options.filter((_, oIdx) => oIdx !== optIndex);
+        let newCorrect = q.correctIdx;
+        if (newCorrect === optIndex) newCorrect = 0;
+        else if (newCorrect > optIndex) newCorrect--;
+        return { ...q, options: newOptions, correctIdx: newCorrect };
+      }
+      return q;
+    }));
+  };
+
+  const removeQuestion = (qIndex) => {
+    setQuestions(prev => prev.filter((_, i) => i !== qIndex));
+  };
+
+  const startQuiz = () => {
+    if (questions.length === 0) return alert("Please add questions first!");
+    setCurrentQ(0);
+    setUserAnswers({});
+    setQuizStartTime(Date.now());
+    setStep('quiz');
+  };
+
+  const handleSelectAnswer = (optIndex) => {
+    setUserAnswers({ ...userAnswers, [currentQ]: optIndex });
+  };
+
+  const submitQuiz = () => {
+    setTimeTaken(Math.floor((Date.now() - quizStartTime) / 1000));
+    setStep('results');
+  };
+
+  const nextQuestion = () => {
+    if (currentQ < questions.length - 1) {
+      setCurrentQ(currentQ + 1);
+    } else {
+      submitQuiz();
+    }
+  };
+
+  const score = questions.reduce((acc, q, idx) => userAnswers[idx] === q.correctIdx ? acc + 1 : acc, 0);
+  const totalQ = questions.length;
+  const accuracy = totalQ > 0 ? ((score / totalQ) * 100).toFixed(1) : 0;
+  const wrongAnswers = totalQ - score;
+  const avgTimePerQ = totalQ > 0 ? (timeTaken / totalQ).toFixed(1) : 0;
+  
+  const formatQuizTime = (seconds) => {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  };
+
+  const panelBg = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100';
+
+  return (
+    <div className="max-w-4xl mx-auto pb-12">
+       <h2 className="text-3xl font-bold mb-6">Quizzer Maker</h2>
+       
+       {step === 'upload' && (
+         <div className={`p-12 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center text-center transition-colors ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'}`}>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6" style={{ backgroundColor: `${colors.ibisPink}40`, color: colors.parisPink }}><Upload size={32} /></div>
+            <h3 className="text-2xl font-bold mb-2">Upload Test Bank</h3>
+            <p className="text-gray-500 mb-4 max-w-md">Upload a PDF of your textbook questions. The system will read all pages and automatically scrub out document watermarks to extract the items.</p>
+            
+            <div className={`p-4 mb-8 rounded-xl text-sm font-medium border ${darkMode ? 'bg-yellow-900/20 border-yellow-800/50 text-yellow-400' : 'bg-yellow-50 border-yellow-200 text-yellow-700'} max-w-lg`}>
+              <strong>Disclaimer:</strong> This feature is optimized exclusively for Test Bank Files that come in a standard PDF document format. Picture-taken exercises or scanned image PDFs are not supported.
+            </div>
+
+            <label className="px-8 py-4 rounded-xl text-white font-bold text-lg transition-all shadow-lg hover:shadow-xl cursor-pointer flex items-center gap-3" style={{ backgroundColor: colors.indigoChild }}>
+              Select PDF File
+              <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
+            </label>
+         </div>
+       )}
+
+       {step === 'scanning' && (
+          <div className="p-12 text-center">
+            <RefreshCw className="animate-spin mx-auto mb-4 text-[#a4a2cc]" size={40} />
+            <h3 className="text-xl font-bold">Extracting PDF Text... {progress}%</h3>
+            <p className="text-sm text-gray-500 mt-2">Processing all pages and filtering watermarks...</p>
+          </div>
+       )}
+       
+       {step === 'preview' && (
+         <div className={`p-8 rounded-3xl border shadow-sm ${panelBg}`}>
+            <div className={`flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6 border-b pb-4 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+              <div>
+                <h3 className="text-xl font-bold">Answer Key Setup ({questions.length} Items Found)</h3>
+                <p className="text-sm text-gray-500 mt-1">Review your questions. Click text to edit, add/remove choices, and click the circle to set the correct answer.</p>
+              </div>
+              <button onClick={startQuiz} className="px-8 py-3 rounded-xl text-white font-bold transition-transform hover:scale-105 active:scale-95 shadow-md whitespace-nowrap" style={{ backgroundColor: colors.parisPink }}>
+                Start Quiz
+              </button>
+            </div>
+
+            <div className={`p-4 mb-6 rounded-xl text-sm font-medium border ${darkMode ? 'bg-blue-900/20 border-blue-800/50 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
+              <strong>Note:</strong> Test banks often use bolding or highlights to indicate answers, which standard PDF extraction cannot read. <strong>Please cross-check and update the answers</strong> before starting.
+            </div>
+            
+            <div className="space-y-6">
+              {questions.map((q, qIdx) => (
+                <div key={q.id} className={`p-6 rounded-2xl border relative group ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50'}`}>
+                  
+                  <button onClick={() => removeQuestion(qIdx)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={18} /></button>
+
+                  <textarea 
+                    value={q.text}
+                    onChange={(e) => updateQuestionText(qIdx, e.target.value)}
+                    className={`w-[95%] bg-transparent font-bold mb-4 text-lg border-b border-dashed outline-none resize-none overflow-hidden focus:border-[#d86d9c] ${darkMode ? 'border-gray-600 text-white' : 'border-gray-300 text-gray-900'}`}
+                    rows={q.text?.split('\n').length || 1}
+                  />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    {q.options.map((opt, optIdx) => {
+                      const isCorrect = q.correctIdx === optIdx;
+                      return (
+                        <div 
+                          key={optIdx} 
+                          className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all relative group/opt ${
+                            isCorrect 
+                              ? (darkMode ? 'border-green-500 bg-green-900/20' : 'border-green-500 bg-green-50')
+                              : (darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white')
+                          }`}
+                        >
+                           <div 
+                             onClick={() => handleSetCorrectAnswer(qIdx, optIdx)}
+                             className={`cursor-pointer w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 hover:scale-110 transition-transform ${isCorrect ? 'border-green-500 bg-green-500 text-white' : 'border-gray-400'}`}
+                           >
+                              {isCorrect && <CheckCircle2 size={14} />}
+                           </div>
+                           
+                           <input 
+                              type="text"
+                              value={opt}
+                              onChange={(e) => updateOptionText(qIdx, optIdx, e.target.value)}
+                              className={`flex-1 w-full bg-transparent border-b border-dashed outline-none focus:border-[#d86d9c] pr-6 ${isCorrect ? (darkMode ? 'font-bold text-green-400 border-green-800' : 'font-bold text-green-700 border-green-200') : (darkMode ? 'font-medium text-gray-300 border-gray-600' : 'font-medium text-gray-600 border-gray-300')}`}
+                           />
+
+                           <button onClick={() => removeOption(qIdx, optIdx)} className="absolute right-3 text-gray-400 hover:text-red-500 opacity-0 group-hover/opt:opacity-100 transition-opacity bg-transparent"><X size={14} /></button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button onClick={() => addOption(qIdx)} className={`text-xs font-bold uppercase tracking-widest flex items-center gap-1 ${darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
+                    <Plus size={14} /> Add Choice
+                  </button>
+                </div>
+              ))}
+            </div>
+         </div>
+       )}
+       
+       {step === 'quiz' && questions[currentQ] && (
+          <div className="max-w-2xl mx-auto py-8">
+            <div className="flex justify-between items-center mb-8 text-gray-500 font-bold uppercase tracking-widest text-sm">
+               <span>Question {currentQ + 1} of {questions.length}</span>
+               <span style={{ color: colors.mauveMemento }}>Focus Mode</span>
+            </div>
+            
+            <div className={`p-8 rounded-3xl shadow-lg border mb-8 ${panelBg}`}>
+               <h3 className="text-2xl font-bold mb-8 leading-relaxed">{questions[currentQ].text}</h3>
+               
+               <div className="space-y-4 mb-8">
+                 {questions[currentQ].options.map((opt, optIdx) => {
+                   const isSelected = userAnswers[currentQ] === optIdx;
+                   return (
+                     <button 
+                       key={optIdx}
+                       onClick={() => handleSelectAnswer(optIdx)}
+                       className={`w-full text-left p-5 rounded-2xl border-2 transition-all font-medium text-lg ${
+                         isSelected 
+                          ? 'border-[#a76e9c] bg-[#a76e9c]/10 text-[#a76e9c] shadow-md' 
+                          : (darkMode ? 'border-gray-700 hover:border-gray-500 hover:bg-gray-800' : 'border-gray-200 hover:border-[#a76e9c]/50 hover:bg-gray-50')
+                       }`}
+                     >
+                       {opt}
+                     </button>
+                   );
+                 })}
+               </div>
+               
+               <div className="flex justify-end">
+                 <button 
+                   onClick={nextQuestion}
+                   disabled={userAnswers[currentQ] === undefined}
+                   className={`px-10 py-4 rounded-xl font-bold text-lg transition-all flex items-center gap-2 ${userAnswers[currentQ] === undefined ? (darkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed') : 'text-white shadow-lg hover:scale-105 active:scale-95'}`}
+                   style={userAnswers[currentQ] !== undefined ? { backgroundColor: colors.indigoChild } : {}}
+                 >
+                   {currentQ < questions.length - 1 ? 'Next Question' : 'Submit Quiz'}
+                 </button>
+               </div>
+            </div>
+          </div>
+       )}
+
+       {step === 'results' && (
+         <div className="space-y-8">
+            <div className={`p-10 rounded-3xl border shadow-sm ${panelBg}`}>
+              <div className="text-center mb-10">
+                <div className="w-24 h-24 mx-auto rounded-full mb-4 flex items-center justify-center shadow-inner border-4" style={{ backgroundColor: `${colors.creamsicle}30`, borderColor: colors.ibisPink }}>
+                  <Target size={40} style={{ color: colors.parisPink }} />
+                </div>
+                <h2 className="text-4xl font-black mb-2" style={{ color: colors.mauveMemento }}>Quiz Complete!</h2>
+                <p className="text-gray-500 font-medium">Review your performance analytics below.</p>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+                 <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                    <CheckCircle2 size={24} className="mx-auto mb-2 text-green-500" />
+                    <p className="text-3xl font-black">{score}</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Correct</p>
+                 </div>
+                 <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                    <X size={24} className="mx-auto mb-2 text-red-500" />
+                    <p className="text-3xl font-black">{wrongAnswers}</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Mistakes</p>
+                 </div>
+                 <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                    <PieChart size={24} className="mx-auto mb-2 text-blue-500" />
+                    <p className="text-3xl font-black">{accuracy}%</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Accuracy</p>
+                 </div>
+                 <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                    <Clock size={24} className="mx-auto mb-2 text-purple-500" />
+                    <p className="text-3xl font-black">{formatQuizTime(timeTaken)}</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Time Taken</p>
+                 </div>
+              </div>
+              
+              <div className="text-center text-sm font-medium text-gray-500 mb-10">
+                 <p>Average Pace: <strong className={darkMode ? 'text-white' : 'text-black'}>{avgTimePerQ} seconds</strong> per question.</p>
+              </div>
+
+              <div className="flex justify-center gap-4">
+                <button onClick={() => setStep('upload')} className={`px-6 py-3 rounded-xl font-bold border-2 transition-colors ${darkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  Upload New Quiz
+                </button>
+                <button onClick={startQuiz} className="px-8 py-3 rounded-xl font-bold text-white shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5" style={{ backgroundColor: colors.parisPink }}>
+                  Retake Quiz
+                </button>
+              </div>
+            </div>
+
+            <div className={`p-10 rounded-3xl border shadow-sm ${panelBg}`}>
+              <h4 className={`font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2 mb-6 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>Item Review</h4>
+              <div className="space-y-4">
+                {questions.map((q, idx) => {
+                  const isCorrect = userAnswers[idx] === q.correctIdx;
+                  return (
+                    <div key={idx} className={`p-4 rounded-2xl border flex flex-col md:flex-row gap-4 items-start md:items-center ${isCorrect ? (darkMode ? 'bg-green-900/10 border-green-800' : 'bg-green-50/50 border-green-200') : (darkMode ? 'bg-red-900/10 border-red-800' : 'bg-red-50/50 border-red-200')}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white ${isCorrect ? 'bg-green-500' : 'bg-red-500'}`}>
+                          {isCorrect ? <CheckCircle2 size={16} /> : <X size={16} />}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium mb-1">{q.text}</p>
+                          <div className="text-sm">
+                            {!isCorrect && (
+                              <p className={`mb-0.5 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Your answer: <span className="font-semibold">{q.options[userAnswers[idx]] || 'No answer'}</span></p>
+                            )}
+                            <p className={darkMode ? 'text-green-400' : 'text-green-600'}>Correct answer: <span className="font-semibold">{q.options[q.correctIdx]}</span></p>
+                          </div>
+                        </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+         </div>
+       )}
     </div>
   );
 }
