@@ -8,7 +8,7 @@ import {
   BookOpen, Calendar, CheckCircle2, Clock, LayoutDashboard, 
   Lightbulb, Moon, Settings, Sun, Target, TrendingUp, 
   Upload, Plus, Trash2, Calculator, ChevronLeft, ChevronRight, Quote, RefreshCw,
-  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Timer as TimerIcon
+  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Timer as TimerIcon, Pause, ListTodo, CheckSquare
 } from 'lucide-react';
 
 // Configure pdf.js worker using Vite's native URL handling
@@ -72,16 +72,11 @@ export default function App() {
   const [darkMode, setDarkMode] = useLocalStorage('xeia_darkmode', false);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // App States (FIXED: Now all properly connected to Local Storage for Guest Mode)
+  // App States
   const [profile, setProfile] = useLocalStorage('xeia_profile', { 
-    name: 'Xeia', 
-    gender: '', 
-    age: '', 
-    yearLevel: 'Reviewee', 
-    subtitle: "Let's crush those CPA goals today.", 
-    photo: '', 
-    passerDate: '2026-05', 
-    currentStatus: profileStatuses[5] 
+    name: 'Xeia', gender: '', age: '', yearLevel: 'Reviewee', 
+    subtitle: "Let's crush those CPA goals today.", photo: '', 
+    passerDate: '2026-05', currentStatus: profileStatuses[5] 
   });
   const [tasks, setTasks] = useLocalStorage('xeia_tasks', []);
   const [subjects, setSubjects] = useLocalStorage('xeia_subjects', []);
@@ -89,10 +84,22 @@ export default function App() {
   const [notes, setNotes] = useLocalStorage('xeia_notes', []);
   const [gradesData, setGradesData] = useLocalStorage('xeia_grades', {}); 
   const [calendarEvents, setCalendarEvents] = useLocalStorage('xeia_calendar', []);
+  
+  // Streak & Daily Reset Logic
   const [streak, setStreak] = useLocalStorage('xeia_streak', 0);
   const [totalDaysLogged, setTotalDaysLogged] = useLocalStorage('xeia_totalDays', 0);
   const [activityData, setActivityData] = useLocalStorage('xeia_activity', Array.from({ length: 42 }, () => 0));
   const [studyLogs, setStudyLogs] = useLocalStorage('xeia_studyLogs', []); 
+  const [lastStudyDate, setLastStudyDate] = useLocalStorage('xeia_lastStudy', null);
+  const [isFrozen, setIsFrozen] = useLocalStorage('xeia_isFrozen', true);
+
+  // Global Timer States (Keeps running when switching tabs)
+  const [timerInitialTime, setTimerInitialTime] = useLocalStorage('xeia_timerInit', 25 * 60);
+  const [timerTimeLeft, setTimerTimeLeft] = useLocalStorage('xeia_timerLeft', 25 * 60);
+  const [timerSessionElapsed, setTimerSessionElapsed] = useLocalStorage('xeia_timerElapsed', 0);
+  const [timerIsRunning, setTimerIsRunning] = useState(false); // Does not persist across refresh to prevent ghost running
+  const [timerMode, setTimerMode] = useLocalStorage('xeia_timerMode', 'focus');
+  const [timerSubjectId, setTimerSubjectId] = useLocalStorage('xeia_timerSubj', '');
 
   const [quotes, setQuotes] = useLocalStorage('xeia_quotes', [
     "Assets = Liabilities + Equity, and Hard Work = Success.",
@@ -118,11 +125,32 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Daily Reset check
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (lastStudyDate !== todayStr && !isFrozen) {
+      setIsFrozen(true);
+    }
+  }, [lastStudyDate, isFrozen, setIsFrozen]);
+
+  const hasStudiedToday = lastStudyDate === new Date().toISOString().split('T')[0] && !isFrozen;
+
+  const registerStudyDay = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (lastStudyDate !== todayStr || isFrozen) {
+      setLastStudyDate(todayStr);
+      setIsFrozen(false);
+      setStreak(s => s + 1);
+      setTotalDaysLogged(t => t + 1);
+    }
+  };
+
   const saveToCloud = async () => {
     if (!user) return alert("Sign in with Google to sync!");
     try {
       await setDoc(doc(db, "users", user.uid), {
-        profile, tasks, subjects, schedule, notes, streak, activityData, totalDaysLogged, gradesData, calendarEvents, quotes, studyLogs
+        profile, tasks, subjects, schedule, notes, streak, activityData, totalDaysLogged, 
+        gradesData, calendarEvents, quotes, studyLogs, lastStudyDate, isFrozen
       });
       alert("Cloud Sync Successful!");
     } catch (e) { alert("Sync Error: " + e.message); }
@@ -144,6 +172,8 @@ export default function App() {
       setCalendarEvents(data.calendarEvents || []);
       setQuotes(data.quotes || quotes);
       setStudyLogs(data.studyLogs || []);
+      setLastStudyDate(data.lastStudyDate || null);
+      setIsFrozen(data.isFrozen !== undefined ? data.isFrozen : true);
     }
   };
 
@@ -176,10 +206,24 @@ export default function App() {
     });
   };
 
-  const registerStudyDay = () => {
-    setStreak(s => s + 1);
-    setTotalDaysLogged(t => t + 1);
-  };
+  // Global Timer Execution
+  useEffect(() => {
+    let interval = null;
+    if (timerIsRunning && timerTimeLeft > 0) {
+      interval = setInterval(() => {
+        setTimerTimeLeft(t => t - 1);
+        setTimerSessionElapsed(e => e + 1);
+      }, 1000);
+    } else if (timerTimeLeft === 0 && timerIsRunning) {
+      setTimerIsRunning(false);
+      if (timerMode === 'focus' && timerSubjectId) {
+        logStudyTime(Math.max(1, Math.floor(timerSessionElapsed / 60)), timerSubjectId);
+      }
+      setTimerSessionElapsed(0);
+      setTimerTimeLeft(timerInitialTime);
+    }
+    return () => clearInterval(interval);
+  }, [timerIsRunning, timerTimeLeft, timerSessionElapsed, timerInitialTime, timerMode, timerSubjectId]);
 
   return (
     <div className={`min-h-screen flex font-sans transition-colors duration-300 ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-[#fafafa] text-gray-800'}`}>
@@ -218,7 +262,7 @@ export default function App() {
       </aside>
 
       <main className="flex-1 p-8 overflow-y-auto">
-        {activeTab === 'dashboard' && <DashboardView darkMode={darkMode} profile={profile} setProfile={setProfile} tasks={tasks} subjects={subjects} setSubjects={setSubjects} streak={streak} setStreak={setStreak} totalDaysLogged={totalDaysLogged} activityData={activityData} studyLogs={studyLogs} colors={colors} paletteList={paletteList} quote={currentQuote} changeQuote={changeQuote} addQuote={addQuote} logStudyTime={logStudyTime} registerStudyDay={registerStudyDay} />}
+        {activeTab === 'dashboard' && <DashboardView darkMode={darkMode} profile={profile} setProfile={setProfile} tasks={tasks} subjects={subjects} setSubjects={setSubjects} streak={streak} setStreak={setStreak} totalDaysLogged={totalDaysLogged} activityData={activityData} studyLogs={studyLogs} colors={colors} paletteList={paletteList} quote={currentQuote} changeQuote={changeQuote} addQuote={addQuote} logStudyTime={logStudyTime} registerStudyDay={registerStudyDay} isFrozen={isFrozen} setIsFrozen={setIsFrozen} hasStudiedToday={hasStudiedToday} timerProps={{timerInitialTime, setTimerInitialTime, timerTimeLeft, setTimerTimeLeft, timerSessionElapsed, setTimerSessionElapsed, timerIsRunning, setTimerIsRunning, timerMode, setTimerMode, timerSubjectId, setTimerSubjectId}} />}
         {activeTab === 'tasks' && <TasksView darkMode={darkMode} tasks={tasks} setTasks={setTasks} subjects={subjects} colors={colors} />}
         {activeTab === 'schedule' && <ScheduleView darkMode={darkMode} colors={colors} subjects={subjects} schedule={schedule} setSchedule={setSchedule} />}
         {activeTab === 'quizzer' && <QuizzerView darkMode={darkMode} colors={colors} />}
@@ -407,15 +451,13 @@ function ProfileView({ darkMode, colors, profile, setProfile, statuses }) {
 }
 
 // --- Dashboard View ---
-function DashboardView({ darkMode, profile, setProfile, tasks, subjects, setSubjects, streak, setStreak, totalDaysLogged, activityData, studyLogs, colors, paletteList, quote, changeQuote, addQuote, logStudyTime, registerStudyDay }) {
+function DashboardView({ darkMode, profile, setProfile, tasks, subjects, setSubjects, streak, setStreak, totalDaysLogged, activityData, studyLogs, colors, paletteList, quote, changeQuote, addQuote, logStudyTime, registerStudyDay, isFrozen, setIsFrozen, hasStudiedToday, timerProps }) {
   const cardStyle = `p-6 rounded-3xl shadow-sm border transition-colors ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`;
   
   const [editingSubjectId, setEditingSubjectId] = useState(null);
   const [editSubjectName, setEditSubjectName] = useState('');
   const [isAddingQuote, setIsAddingQuote] = useState(false);
   const [newQuoteText, setNewQuoteText] = useState('');
-  const [isFrozen, setIsFrozen] = useState(true);
-  const [hasStudiedToday, setHasStudiedToday] = useState(false);
 
   const subjectStats = subjects.map(sub => {
     const subTasks = tasks.filter(t => t.subjectId === sub.id);
@@ -484,7 +526,7 @@ function DashboardView({ darkMode, profile, setProfile, tasks, subjects, setSubj
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
         <div className={`col-span-1 md:col-span-5 row-span-2 ${cardStyle} flex flex-col relative overflow-hidden p-0`}>
-          <Timer darkMode={darkMode} logStudyTime={logStudyTime} colors={colors} subjects={subjects} studyLogs={studyLogs} />
+          <Timer darkMode={darkMode} logStudyTime={logStudyTime} colors={colors} subjects={subjects} studyLogs={studyLogs} timerProps={timerProps} />
         </div>
 
         <div className={`col-span-1 md:col-span-4 ${cardStyle} flex flex-col`}>
@@ -534,7 +576,7 @@ function DashboardView({ darkMode, profile, setProfile, tasks, subjects, setSubj
           <h3 className="font-bold tracking-wide uppercase text-xs mb-1 transition-colors" style={{ color: isFrozen ? '#60a5fa' : '#6b7280' }}>{isFrozen ? 'Streak Frozen' : 'Current Streak'}</h3>
           <div className="text-5xl font-black my-1 transition-colors" style={{ color: isFrozen ? '#93c5fd' : colors.parisPink }}>{streak}</div>
           <p className="text-xs text-gray-500 mb-4 transition-colors">{isFrozen ? 'resume to unfreeze' : 'days of consecutive study'}</p>
-          <button onClick={() => { setHasStudiedToday(true); setIsFrozen(false); registerStudyDay(); }} disabled={hasStudiedToday} className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm ${hasStudiedToday ? (darkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'text-white hover:-translate-y-0.5 hover:shadow-md active:translate-y-0'}`} style={hasStudiedToday ? {} : { backgroundColor: isFrozen ? '#60a5fa' : colors.ibisPink }}>
+          <button onClick={registerStudyDay} disabled={hasStudiedToday} className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm ${hasStudiedToday ? (darkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed') : 'text-white hover:-translate-y-0.5 hover:shadow-md active:translate-y-0'}`} style={hasStudiedToday ? {} : { backgroundColor: isFrozen ? '#60a5fa' : colors.ibisPink }}>
             {hasStudiedToday ? 'Registered for Today!' : (isFrozen ? 'Unfreeze & Study' : 'Ready to Study')}
           </button>
         </div>
@@ -570,71 +612,58 @@ function DashboardView({ darkMode, profile, setProfile, tasks, subjects, setSubj
   );
 }
 
-function Timer({ darkMode, logStudyTime, colors, subjects, studyLogs }) {
-  const [initialTime, setInitialTime] = useState(25 * 60); 
-  const [timeLeft, setTimeLeft] = useState(25 * 60);
-  const [sessionElapsed, setSessionElapsed] = useState(0); 
-  const [isRunning, setIsRunning] = useState(false);
-  const [mode, setMode] = useState('focus'); 
+function Timer({ darkMode, logStudyTime, colors, subjects, studyLogs, timerProps }) {
+  const {
+    timerInitialTime, setTimerInitialTime,
+    timerTimeLeft, setTimerTimeLeft,
+    timerSessionElapsed, setTimerSessionElapsed,
+    timerIsRunning, setTimerIsRunning,
+    timerMode, setTimerMode,
+    timerSubjectId, setTimerSubjectId
+  } = timerProps;
+
   const [isEditing, setIsEditing] = useState(false);
   const [showStats, setShowStats] = useState(false); 
   const [editHours, setEditHours] = useState(0);
   const [editMins, setEditMins] = useState(25);
-  const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || '');
 
-  const getLoggedMinutes = () => Math.max(1, Math.floor(sessionElapsed / 60));
-
-  useEffect(() => {
-    let interval = null;
-    if (isRunning && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft(t => t - 1);
-        setSessionElapsed(e => e + 1);
-      }, 1000);
-    } else if (timeLeft === 0 && isRunning) {
-      setIsRunning(false);
-      if (mode === 'focus' && selectedSubjectId) logStudyTime(getLoggedMinutes(), selectedSubjectId);
-      setSessionElapsed(0);
-      setTimeLeft(initialTime); 
-    }
-    return () => clearInterval(interval);
-  }, [isRunning, timeLeft, sessionElapsed, initialTime, mode, logStudyTime, selectedSubjectId]);
+  const getLoggedMinutes = () => Math.max(1, Math.floor(timerSessionElapsed / 60));
 
   const toggleTimer = () => {
-    if (!selectedSubjectId && mode === 'focus') return alert("Please select a subject to study first!");
-    setIsRunning(!isRunning);
+    if (!timerSubjectId && timerMode === 'focus') return alert("Please select a subject to study first!");
+    setTimerIsRunning(!timerIsRunning);
   };
   
   const handleLogAndReset = () => {
-    setIsRunning(false);
+    setTimerIsRunning(false);
     const minsToLog = getLoggedMinutes();
-    if (minsToLog > 0 && mode === 'focus' && selectedSubjectId) logStudyTime(minsToLog, selectedSubjectId); 
-    setSessionElapsed(0);
-    setTimeLeft(initialTime);
+    if (minsToLog > 0 && timerMode === 'focus' && timerSubjectId) logStudyTime(minsToLog, timerSubjectId); 
+    setTimerSessionElapsed(0);
+    setTimerTimeLeft(timerInitialTime);
   };
 
-  const setTimerMode = (newMode) => {
-    setMode(newMode);
-    setIsRunning(false);
-    setSessionElapsed(0);
+  const changeMode = (newMode) => {
+    setTimerMode(newMode);
+    setTimerIsRunning(false);
+    setTimerSessionElapsed(0);
     const preset = newMode === 'focus' ? 25 * 60 : 5 * 60;
-    setInitialTime(preset);
-    setTimeLeft(preset);
+    setTimerInitialTime(preset);
+    setTimerTimeLeft(preset);
   };
 
   const openSettings = () => {
-    setIsRunning(false);
-    setEditHours(Math.floor(initialTime / 3600));
-    setEditMins(Math.floor((initialTime % 3600) / 60));
+    setTimerIsRunning(false);
+    setEditHours(Math.floor(timerInitialTime / 3600));
+    setEditMins(Math.floor((timerInitialTime % 3600) / 60));
     setIsEditing(true);
   };
 
   const saveSettings = () => {
     const newSeconds = (editHours * 3600) + (editMins * 60);
     const finalSeconds = newSeconds === 0 ? 60 : newSeconds; 
-    setInitialTime(finalSeconds);
-    setTimeLeft(finalSeconds);
-    setSessionElapsed(0);
+    setTimerInitialTime(finalSeconds);
+    setTimerTimeLeft(finalSeconds);
+    setTimerSessionElapsed(0);
     setIsEditing(false);
   };
 
@@ -670,14 +699,14 @@ function Timer({ darkMode, logStudyTime, colors, subjects, studyLogs }) {
   return (
     <>
       <style>{`@keyframes fluidBackground { 0% { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; transform: translate(0px, 0px) scale(1); } 25% { border-radius: 70% 30% 50% 50% / 30% 30% 70% 70%; transform: translate(-150px, 150px) scale(1.1); } 50% { border-radius: 100% 60% 60% 100% / 100% 100% 60% 60%; transform: translate(-300px, 50px) scale(0.9); } 75% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; transform: translate(-150px, -50px) scale(1.05); } 100% { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; transform: translate(0px, 0px) scale(1); } }`}</style>
-      <div className="absolute -top-20 -right-20 w-80 h-80 opacity-30 blur-3xl pointer-events-none" style={{ backgroundColor: colors.parisPink, animation: 'fluidBackground 15s ease-in-out infinite', animationPlayState: isRunning ? 'running' : 'paused' }}></div>
+      <div className="absolute -top-20 -right-20 w-80 h-80 opacity-30 blur-3xl pointer-events-none" style={{ backgroundColor: colors.parisPink, animation: 'fluidBackground 15s ease-in-out infinite', animationPlayState: timerIsRunning ? 'running' : 'paused' }}></div>
       <div className="flex flex-col flex-1 relative z-10 p-6 h-full">
         
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-2">
             <h3 className="font-bold tracking-wide uppercase text-sm text-gray-500">Focus Session</h3>
-            {mode === 'focus' && !showStats && (
-              <select value={selectedSubjectId} onChange={e => setSelectedSubjectId(e.target.value)} className={`text-xs font-bold px-2 py-1 rounded-md border outline-none ${darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-200 text-gray-800'}`}>
+            {timerMode === 'focus' && !showStats && (
+              <select value={timerSubjectId} onChange={e => setTimerSubjectId(e.target.value)} className={`text-xs font-bold px-2 py-1 rounded-md border outline-none ${darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-200 text-gray-800'}`}>
                 <option value="">Select Subject...</option>
                 {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
@@ -735,25 +764,25 @@ function Timer({ darkMode, logStudyTime, colors, subjects, studyLogs }) {
         ) : (
           <div className="flex flex-col items-center justify-center flex-1">
             <div className={`flex space-x-2 mb-6 p-1 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-              <button className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${mode === 'focus' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`} onClick={() => setTimerMode('focus')}>Focus</button>
-              <button className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${mode === 'break' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`} onClick={() => setTimerMode('break')}>Break</button>
+              <button className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${timerMode === 'focus' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`} onClick={() => changeMode('focus')}>Focus</button>
+              <button className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${timerMode === 'break' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`} onClick={() => changeMode('break')}>Break</button>
             </div>
             
             <div className="flex flex-col items-center mb-8">
-               <div className="text-7xl font-bold tracking-tighter font-mono cursor-pointer hover:opacity-80 transition-opacity" style={{ color: mode === 'focus' ? colors.parisPink : colors.indigoChild }} onClick={openSettings}>
-                 {formatTime(timeLeft)}
+               <div className="text-7xl font-bold tracking-tighter font-mono cursor-pointer hover:opacity-80 transition-opacity" style={{ color: timerMode === 'focus' ? colors.parisPink : colors.indigoChild }} onClick={openSettings}>
+                 {formatTime(timerTimeLeft)}
                </div>
                <span className="text-[10px] uppercase tracking-widest text-gray-400 mt-2">Click the timer to customize time</span>
             </div>
 
             <div className="flex space-x-4 relative">
-              <button onClick={toggleTimer} className="w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg transition-transform hover:scale-105 active:scale-95" style={{ backgroundColor: isRunning ? colors.mauveMemento : colors.parisPink }}>
-                {isRunning ? <Clock size={28} /> : <div className="w-0 h-0 border-t-[10px] border-t-transparent border-l-[16px] border-l-white border-b-[10px] border-b-transparent ml-2"></div>}
+              <button onClick={toggleTimer} className="w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg transition-transform hover:scale-105 active:scale-95" style={{ backgroundColor: timerIsRunning ? colors.mauveMemento : colors.parisPink }}>
+                {timerIsRunning ? <Pause size={28} fill="currentColor" /> : <div className="w-0 h-0 border-t-[10px] border-t-transparent border-l-[16px] border-l-white border-b-[10px] border-b-transparent ml-2"></div>}
               </button>
-              <button onClick={handleLogAndReset} title={sessionElapsed > 0 ? "Log Time & Stop" : "Reset Timer"} className={`w-16 h-16 rounded-2xl flex items-center justify-center border-2 transition-all duration-300 ${sessionElapsed > 0 ? (darkMode ? 'border-green-600 bg-green-900/30 text-green-400 hover:bg-green-800' : 'border-green-400 bg-green-50 text-green-600 hover:bg-green-100') : (darkMode ? 'border-gray-600 text-gray-400 hover:bg-gray-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50')}`}>
-                {sessionElapsed > 0 ? <CheckCircle2 size={24} /> : <RefreshCw size={24} />}
+              <button onClick={handleLogAndReset} title={timerSessionElapsed > 0 ? "Log Time & Stop" : "Reset Timer"} className={`w-16 h-16 rounded-2xl flex items-center justify-center border-2 transition-all duration-300 ${timerSessionElapsed > 0 ? (darkMode ? 'border-green-600 bg-green-900/30 text-green-400 hover:bg-green-800' : 'border-green-400 bg-green-50 text-green-600 hover:bg-green-100') : (darkMode ? 'border-gray-600 text-gray-400 hover:bg-gray-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50')}`}>
+                {timerSessionElapsed > 0 ? <CheckCircle2 size={24} /> : <RefreshCw size={24} />}
               </button>
-              {sessionElapsed > 0 && mode === 'focus' && (
+              {timerSessionElapsed > 0 && timerMode === 'focus' && (
                 <div className={`absolute -bottom-6 left-0 right-0 text-center text-xs font-bold whitespace-nowrap ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
                    Log {getLoggedMinutes()} min{getLoggedMinutes() !== 1 && 's'}
                 </div>
@@ -801,7 +830,7 @@ function ActivityHeatmap({ colors, darkMode, activityData }) {
 function ScheduleView({ darkMode, colors, subjects, schedule, setSchedule }) {
   const [editingId, setEditingId] = useState(null);
   const [newSubj, setNewSubj] = useState(subjects[0]?.id || '');
-  const [newDay, setNewDay] = useState('Monday');
+  const [newDays, setNewDays] = useState(['Monday']);
   const [newStart, setNewStart] = useState('08:00');
   const [newEnd, setNewEnd] = useState('09:30');
   const [newRoom, setNewRoom] = useState('');
@@ -809,15 +838,19 @@ function ScheduleView({ darkMode, colors, subjects, schedule, setSchedule }) {
 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+  const toggleDay = (d) => {
+    setNewDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
+  };
+
   const handleAddOrUpdate = (e) => {
     e.preventDefault();
-    if (!newRoom.trim() || !newInst.trim()) return;
+    if (!newRoom.trim() || !newInst.trim() || newDays.length === 0) return alert("Please fill all fields and select at least one day.");
     
     if (editingId) {
-      setSchedule(schedule.map(s => s.id === editingId ? { ...s, subjectId: newSubj, day: newDay, startTime: newStart, endTime: newEnd, room: newRoom, instructor: newInst } : s));
+      setSchedule(schedule.map(s => s.id === editingId ? { ...s, subjectId: newSubj, days: newDays, startTime: newStart, endTime: newEnd, room: newRoom, instructor: newInst } : s));
       setEditingId(null);
     } else {
-      setSchedule([...schedule, { id: Date.now(), subjectId: newSubj, day: newDay, startTime: newStart, endTime: newEnd, room: newRoom, instructor: newInst }]);
+      setSchedule([...schedule, { id: Date.now(), subjectId: newSubj, days: newDays, startTime: newStart, endTime: newEnd, room: newRoom, instructor: newInst }]);
     }
     
     setNewRoom(''); 
@@ -827,7 +860,7 @@ function ScheduleView({ darkMode, colors, subjects, schedule, setSchedule }) {
   const startEdit = (cls) => {
     setEditingId(cls.id);
     setNewSubj(cls.subjectId);
-    setNewDay(cls.day);
+    setNewDays(cls.days || (cls.day ? [cls.day] : ['Monday'])); // Fallback for old data structure
     setNewStart(cls.startTime);
     setNewEnd(cls.endTime);
     setNewRoom(cls.room);
@@ -852,10 +885,20 @@ function ScheduleView({ darkMode, colors, subjects, schedule, setSchedule }) {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Day</label>
-              <select value={newDay} onChange={e => setNewDay(e.target.value)} className={inputClass}>
-                {daysOfWeek.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Days of the Week</label>
+              <div className="flex flex-wrap gap-2">
+                 {daysOfWeek.map(d => (
+                   <button 
+                     key={d} 
+                     type="button"
+                     onClick={() => toggleDay(d)}
+                     className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${newDays.includes(d) ? 'text-white' : (darkMode ? 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50')}`}
+                     style={newDays.includes(d) ? { backgroundColor: colors.mauveMemento, borderColor: colors.mauveMemento } : {}}
+                   >
+                     {d.slice(0, 3)}
+                   </button>
+                 ))}
+              </div>
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
@@ -893,7 +936,7 @@ function ScheduleView({ darkMode, colors, subjects, schedule, setSchedule }) {
           ) : (
             <div className="space-y-6">
               {daysOfWeek.map(day => {
-                const classes = schedule.filter(s => s.day === day).sort((a, b) => a.startTime.localeCompare(b.startTime));
+                const classes = schedule.filter(s => (s.days && s.days.includes(day)) || s.day === day).sort((a, b) => a.startTime.localeCompare(b.startTime));
                 if (classes.length === 0) return null;
                 
                 return (
@@ -943,9 +986,10 @@ function ScheduleView({ darkMode, colors, subjects, schedule, setSchedule }) {
 
 // --- Tasks To-Do View ---
 function TasksView({ darkMode, tasks, setTasks, subjects, colors }) {
+  const [tab, setTab] = useState('todo'); // 'todo' | 'done'
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newSubjectId, setNewSubjectId] = useState(subjects[0]?.id || '');
-  const [newDeadline, setNewDeadline] = useState('2026-03-21');
+  const [newDeadline, setNewDeadline] = useState(new Date().toISOString().split('T')[0]);
   const [editingTaskId, setEditingTaskId] = useState(null);
 
   const addTask = (e) => {
@@ -959,50 +1003,121 @@ function TasksView({ darkMode, tasks, setTasks, subjects, colors }) {
   const deleteTask = (id) => setTasks(tasks.filter(t => t.id !== id));
   const saveTaskEdit = (id, newVals) => { setTasks(tasks.map(t => t.id === id ? { ...t, ...newVals } : t)); setEditingTaskId(null); };
 
+  const todoTasks = tasks.filter(t => !t.completed);
+  const doneTasks = tasks.filter(t => t.completed);
+
+  // Grouping logic for To-Do
+  const todayStr = new Date().toISOString().split('T')[0];
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+  const groupTasks = (taskList) => {
+    const groups = { Overdue: [], Today: [], Tomorrow: [], Upcoming: [] };
+    taskList.forEach(t => {
+      if (!t.deadline) groups.Upcoming.push(t);
+      else if (t.deadline < todayStr) groups.Overdue.push(t);
+      else if (t.deadline === todayStr) groups.Today.push(t);
+      else if (t.deadline === tomorrowStr) groups.Tomorrow.push(t);
+      else groups.Upcoming.push(t);
+    });
+    // Sort each group by deadline
+    Object.keys(groups).forEach(key => {
+      groups[key].sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+    });
+    return groups;
+  };
+
+  const groupedTodos = groupTasks(todoTasks);
+
+  const renderTask = (task) => {
+    const subject = subjects.find(s => s.id === task.subjectId) || { name: 'Unknown', color: '#ccc' };
+    const isEditing = editingTaskId === task.id;
+
+    if (isEditing) {
+      return <EditTaskForm key={task.id} task={task} subjects={subjects} onSave={saveTaskEdit} onCancel={() => setEditingTaskId(null)} darkMode={darkMode} colors={colors} />;
+    }
+
+    return (
+      <div key={task.id} className={`flex items-center justify-between p-4 rounded-xl border transition-all shadow-sm group ${darkMode ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
+        <div className="flex items-center gap-4">
+          <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-full flex items-center justify-center border-2 ${task.completed ? 'bg-green-500 border-green-500 text-white' : (darkMode ? 'border-gray-500 text-transparent hover:border-[#d86d9c]' : 'border-gray-300 text-transparent hover:border-[#d86d9c]')}`}><CheckCircle2 size={16} /></button>
+          <div className={task.completed ? 'opacity-50 line-through' : ''}>
+            <p className="font-medium text-lg flex items-center gap-2">{task.title}{!task.completed && <button onClick={() => setEditingTaskId(task.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#d86d9c]"><Edit2 size={14} /></button>}</p>
+            <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+              <span className="px-2 py-0.5 rounded-md text-xs font-bold text-white shadow-sm" style={{ backgroundColor: subject.color }}>{subject.name}</span>
+              {task.deadline && <span className="flex items-center gap-1"><Calendar size={12}/> {task.deadline}</span>}
+            </p>
+          </div>
+        </div>
+        <button onClick={() => deleteTask(task.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={20} /></button>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
-      <h2 className="text-3xl font-bold mb-6">Tasks To-Do</h2>
-      <div className={`p-6 rounded-2xl mb-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-        <form onSubmit={addTask} className="flex flex-col md:flex-row gap-4">
-          <input type="text" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="What needs to be done?" className={`flex-1 px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 ${darkMode ? 'bg-gray-700 border-gray-600 focus:ring-[#a4a2cc] text-white' : 'bg-gray-50 border-gray-200 focus:ring-[#fbceb7]'}`} />
-          <div className="flex gap-4">
-            <select value={newSubjectId} onChange={(e) => setNewSubjectId(e.target.value)} className={`px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 ${darkMode ? 'bg-gray-700 border-gray-600 focus:ring-[#a4a2cc] text-white' : 'bg-gray-50 border-gray-200 focus:ring-[#fbceb7]'}`} required>
-              <option value="">Select Subject...</option>
-              {subjects.map(sub => <option key={sub.id} value={sub.id}>{sub.name}</option>)}
-            </select>
-            <input type="date" value={newDeadline} onChange={(e) => setNewDeadline(e.target.value)} className={`px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 ${darkMode ? 'bg-gray-700 border-gray-600 focus:ring-[#a4a2cc] text-white' : 'bg-gray-50 border-gray-200 focus:ring-[#fbceb7]'}`} />
-            <button type="submit" className="px-6 py-3 rounded-xl text-white font-medium transition-colors hover:opacity-90 flex items-center justify-center gap-2" style={{ backgroundColor: colors.mauveMemento }}><Plus size={20} /> <span className="hidden md:inline">Add</span></button>
-          </div>
-        </form>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <h2 className="text-3xl font-bold">Tasks</h2>
+        <div className={`flex space-x-1 p-1 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
+           <button onClick={() => setTab('todo')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'todo' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><ListTodo size={16} /> To-Do</button>
+           <button onClick={() => setTab('done')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'done' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><CheckSquare size={16} /> Completed</button>
+        </div>
       </div>
 
-      <div className="space-y-3">
-        {tasks.map(task => {
-          const subject = subjects.find(s => s.id === task.subjectId) || { name: 'Unknown', color: '#ccc' };
-          const isEditing = editingTaskId === task.id;
-
-          if (isEditing) {
-            return <EditTaskForm key={task.id} task={task} subjects={subjects} onSave={saveTaskEdit} onCancel={() => setEditingTaskId(null)} darkMode={darkMode} colors={colors} />;
-          }
-
-          return (
-            <div key={task.id} className={`flex items-center justify-between p-4 rounded-xl border transition-all shadow-sm group ${darkMode ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
-              <div className="flex items-center gap-4">
-                <button onClick={() => toggleTask(task.id)} className={`w-6 h-6 rounded-full flex items-center justify-center border-2 ${task.completed ? 'bg-green-500 border-green-500 text-white' : (darkMode ? 'border-gray-500 text-transparent' : 'border-gray-300 text-transparent')}`}><CheckCircle2 size={16} /></button>
-                <div className={task.completed ? 'opacity-50 line-through' : ''}>
-                  <p className="font-medium text-lg flex items-center gap-2">{task.title}<button onClick={() => setEditingTaskId(task.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#d86d9c]"><Edit2 size={14} /></button></p>
-                  <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-                    <span className="px-2 py-0.5 rounded-md text-xs font-bold text-white shadow-sm" style={{ backgroundColor: subject.color }}>{subject.name}</span>
-                    <span className="flex items-center gap-1"><Calendar size={12}/> {task.deadline}</span>
-                  </p>
-                </div>
-              </div>
-              <button onClick={() => deleteTask(task.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={20} /></button>
+      {tab === 'todo' && (
+        <div className={`p-6 rounded-2xl mb-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+          <form onSubmit={addTask} className="flex flex-col md:flex-row gap-4">
+            <input type="text" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="What needs to be done?" className={`flex-1 px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 ${darkMode ? 'bg-gray-700 border-gray-600 focus:ring-[#a4a2cc] text-white' : 'bg-gray-50 border-gray-200 focus:ring-[#fbceb7]'}`} />
+            <div className="flex gap-4">
+              <select value={newSubjectId} onChange={(e) => setNewSubjectId(e.target.value)} className={`px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 ${darkMode ? 'bg-gray-700 border-gray-600 focus:ring-[#a4a2cc] text-white' : 'bg-gray-50 border-gray-200 focus:ring-[#fbceb7]'}`} required>
+                <option value="">Select Subject...</option>
+                {subjects.map(sub => <option key={sub.id} value={sub.id}>{sub.name}</option>)}
+              </select>
+              <input type="date" value={newDeadline} onChange={(e) => setNewDeadline(e.target.value)} className={`px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 ${darkMode ? 'bg-gray-700 border-gray-600 focus:ring-[#a4a2cc] text-white' : 'bg-gray-50 border-gray-200 focus:ring-[#fbceb7]'}`} />
+              <button type="submit" className="px-6 py-3 rounded-xl text-white font-medium transition-colors hover:opacity-90 flex items-center justify-center gap-2" style={{ backgroundColor: colors.mauveMemento }}><Plus size={20} /> <span className="hidden md:inline">Add</span></button>
             </div>
-          )
-        })}
-        {tasks.length === 0 && <p className="text-center text-gray-400 py-10 font-medium">No tasks yet. Enjoy your break!</p>}
-      </div>
+          </form>
+        </div>
+      )}
+
+      {tab === 'todo' ? (
+        <div className="space-y-8">
+          {todoTasks.length === 0 && <p className="text-center text-gray-400 py-10 font-medium">All caught up! Enjoy your break!</p>}
+          
+          {groupedTodos.Overdue.length > 0 && (
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-red-500 mb-3 ml-2">Overdue</h3>
+              <div className="space-y-3">{groupedTodos.Overdue.map(renderTask)}</div>
+            </div>
+          )}
+          {groupedTodos.Today.length > 0 && (
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-blue-500 mb-3 ml-2">Today</h3>
+              <div className="space-y-3">{groupedTodos.Today.map(renderTask)}</div>
+            </div>
+          )}
+          {groupedTodos.Tomorrow.length > 0 && (
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-yellow-500 mb-3 ml-2">Tomorrow</h3>
+              <div className="space-y-3">{groupedTodos.Tomorrow.map(renderTask)}</div>
+            </div>
+          )}
+          {groupedTodos.Upcoming.length > 0 && (
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3 ml-2">Upcoming / No Date</h3>
+              <div className="space-y-3">{groupedTodos.Upcoming.map(renderTask)}</div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {doneTasks.length === 0 ? (
+             <p className="text-center text-gray-400 py-10 font-medium">No completed tasks yet. Time to get to work!</p>
+          ) : (
+             doneTasks.sort((a,b) => new Date(b.id) - new Date(a.id)).map(renderTask)
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1212,7 +1327,7 @@ function BrainstormView({ darkMode, colors, notes, setNotes }) {
   );
 }
 
-// --- Grades View (Reviewee mode tracks cumulative globally) ---
+// --- Grades View ---
 function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   const [mode, setMode] = useState('student');
   const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || '');
@@ -1220,7 +1335,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   const midterms = gradesData[selectedSubjectId]?.midterms || [];
   const finals = gradesData[selectedSubjectId]?.finals || [];
   
-  // Reviewee mode now uses a global/cumulative array tracking all mock exams across the board
   const revieweeLogs = gradesData.globalRevieweeLogs || [];
 
   const updateSubjectGrades = (term, data) => {
@@ -1235,10 +1349,7 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   };
 
   const updateGlobalRevieweeLogs = (data) => {
-    setGradesData({
-      ...gradesData,
-      globalRevieweeLogs: data
-    });
+    setGradesData({ ...gradesData, globalRevieweeLogs: data });
   };
 
   const [gradingScale, setGradingScale] = useState([
@@ -1252,7 +1363,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
     { id: 8, min: 0, max: 59, grade: 'R' }
   ]);
 
-  // Student Mode Actions
   const handleStudentChange = (term, id, field, value) => {
     const data = term === 'midterms' ? midterms : finals;
     const updatedData = data.map(item => item.id === id ? { ...item, [field]: field === 'name' ? value : Number(value) } : item);
@@ -1283,7 +1393,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   const addScaleItem = () => setGradingScale([...gradingScale, { id: Date.now(), min: 0, max: 0, grade: '0.0' }]);
   const removeScaleItem = (id) => setGradingScale(gradingScale.filter(item => item.id !== id));
 
-  // Reviewee Mode Actions (Global)
   const handleRevieweeChange = (id, field, value) => {
     const updatedData = revieweeLogs.map(item => item.id === id ? { ...item, [field]: field === 'name' ? value : Number(value) } : item);
     updateGlobalRevieweeLogs(updatedData);
@@ -1297,7 +1406,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
     updateGlobalRevieweeLogs(updatedData);
   };
 
-  // Math Computations
   const interpretGrade = (percent) => {
     if (percent === 0) return '-';
     const roundedPercent = Math.round(percent);
@@ -1315,7 +1423,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   const finPerc = calcSection(finals);
   const overallPerc = calcSection([...midterms, ...finals]);
 
-  // Reviewee Mode calculates cumulative based on ALL exams
   let revObtained = 0; let revTotal = 0; let below65Count = 0;
   revieweeLogs.forEach(i => {
     revObtained += i.obtained; revTotal += i.total;
@@ -1330,7 +1437,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
     else if (below65Count <= 2) { revStatus = 'Conditional'; statusColor = darkMode ? 'text-yellow-400 bg-yellow-900/30' : 'text-yellow-600 bg-yellow-100'; }
   }
 
-  // Styles
   const panelBg = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100';
   const itemBg = darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200';
   const inputBg = darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-800';
@@ -1343,7 +1449,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   return (
     <div className="max-w-6xl mx-auto h-full flex flex-col space-y-6">
       
-      {/* Header with Toggle and Dropdown */}
       <div className="flex justify-between items-center flex-wrap gap-4 mb-2">
         <h2 className="text-3xl font-bold">Grade Computation</h2>
         
@@ -1353,7 +1458,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
             <button onClick={() => setMode('reviewee')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${mode === 'reviewee' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}>Reviewee</button>
           </div>
 
-          {/* Subject Selector is ONLY visible in Student Mode per request */}
           {mode === 'student' && (
             <select value={selectedSubjectId} onChange={e => setSelectedSubjectId(e.target.value)} className={`${inputClass} min-w-[200px]`}>
               {subjects.length === 0 && <option value="">Add subjects first...</option>}
@@ -1370,7 +1474,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
           <p className="text-gray-400">Head over to your Dashboard to add your CPA subjects before computing grades.</p>
         </div>
       ) : mode === 'student' ? (
-        // STUDENT MODE VIEW (Per-Subject)
         <div className="space-y-6">
           <div className={`p-8 rounded-3xl shadow-sm border flex flex-col md:flex-row justify-between items-center gap-6 ${panelBg}`}>
             <div className="flex items-center gap-6">
@@ -1487,7 +1590,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
           </div>
         </div>
       ) : (
-        // REVIEWEE MODE VIEW (Global Tracking across all subjects)
         <div className="flex flex-col lg:flex-row gap-6 items-start">
           <div className={`flex-1 w-full p-8 rounded-3xl border shadow-sm ${panelBg}`}>
             <h3 className="text-xl font-bold mb-6 flex items-center gap-2"><BookOpen size={20} style={{ color: colors.indigoChild }} /> Global Mock Exam Logs</h3>
@@ -1541,413 +1643,6 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// --- Quizzer View ---
-function QuizzerView({ darkMode, colors }) {
-  const [step, setStep] = useState('upload'); 
-  const [isScanning, setIsScanning] = useState(false);
-  const [questions, setQuestions] = useState([]);
-  const [currentQ, setCurrentQ] = useState(0);
-  const [userAnswers, setUserAnswers] = useState({});
-  const [progress, setProgress] = useState(0);
-  
-  // Analytics Trackers
-  const [quizStartTime, setQuizStartTime] = useState(null);
-  const [timeTaken, setTimeTaken] = useState(0);
-
-  const extractTextFromPdf = async (file) => {
-    try {
-      const data = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data }).promise;
-      let fullText = '';
-      
-      for (let i = 1; i <= pdf.numPages; i++) {
-        setProgress(Math.round((i / pdf.numPages) * 100));
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        
-        const pageText = textContent.items.map(item => item.str).join(' ')
-          .replace(/downloaded by[^\n]*/ig, '')
-          .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '') 
-          .replace(/studocu/ig, '')
-          .replace(/page\s*\d+/ig, '')
-          .replace(/granof[^\n]*/ig, '')
-          .replace(/iomoarcpsd[^\n]*/ig, '')
-          .replace(/([a-dA-D]\.)/g, '\n$1') 
-          .replace(/(\d+\.)/g, '\n$1'); 
-          
-        fullText += pageText + '\n\n';
-      }
-      return fullText;
-    } catch (error) {
-      console.error("PDF processing error:", error);
-      throw new Error("Failed to process PDF.");
-    }
-  };
-
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (file.type !== 'application/pdf') {
-      alert("Error: The Quizzer Maker currently only supports PDF Document test banks.");
-      return;
-    }
-
-    setIsScanning(true);
-    setStep('scanning');
-
-    try {
-      const extractedText = await extractTextFromPdf(file);
-      const extractedQuestions = parseTextIntoQuestions(extractedText);
-      setQuestions(extractedQuestions);
-      setStep('preview');
-    } catch (error) {
-      console.error("Scanning failed:", error);
-      alert(error.message || "Failed to scan file. Ensure it is a valid PDF.");
-      setStep('upload');
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const parseTextIntoQuestions = (rawText) => {
-    const junkFilters = [
-      /downloaded by/i,
-      /studocu/i,
-      /iomoarcpsd/i,
-      /testbank/i,
-      /page\s*\d+/i,
-      /granof/i 
-    ];
-
-    const lines = rawText.split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .filter(line => !junkFilters.some(regex => regex.test(line)));
-
-    let parsedQuestions = [];
-    let currentQuestion = null;
-
-    lines.forEach(line => {
-      if (/^\d+\./.test(line)) {
-        if (currentQuestion && currentQuestion.options.length > 0) parsedQuestions.push(currentQuestion);
-        currentQuestion = { id: Date.now() + Math.random(), text: line, options: [], correctIdx: 0 };
-      } 
-      else if (/^[A-D]\./i.test(line) && currentQuestion) {
-        currentQuestion.options.push(line);
-      } 
-      else if (currentQuestion && currentQuestion.options.length === 0) {
-        currentQuestion.text += " " + line;
-      }
-    });
-    
-    if (currentQuestion && currentQuestion.options.length > 0) parsedQuestions.push(currentQuestion);
-    
-    return parsedQuestions.length > 0 ? parsedQuestions : [{ 
-      id: 1, 
-      text: "Could not detect standard formatting. Ensure questions start with numbers and choices with A/B/C/D.", 
-      options: ["Retry Upload"], 
-      correctIdx: 0 
-    }];
-  };
-
-  // --- Editable Setup Tools ---
-  const updateQuestionText = (qIndex, newText) => {
-    const updated = [...questions];
-    updated[qIndex].text = newText;
-    setQuestions(updated);
-  };
-
-  const updateOptionText = (qIndex, optIndex, newText) => {
-    const updated = [...questions];
-    updated[qIndex].options[optIndex] = newText;
-    setQuestions(updated);
-  };
-
-  const handleSetCorrectAnswer = (qIndex, optIndex) => {
-    const updated = [...questions];
-    updated[qIndex].correctIdx = optIndex;
-    setQuestions(updated);
-  };
-
-  const addOption = (qIndex) => {
-    const updated = [...questions];
-    updated[qIndex].options.push(`New Option`);
-    setQuestions(updated);
-  };
-
-  const removeOption = (qIndex, optIndex) => {
-    const updated = [...questions];
-    updated[qIndex].options = updated[qIndex].options.filter((_, i) => i !== optIndex);
-    if (updated[qIndex].correctIdx === optIndex) updated[qIndex].correctIdx = 0;
-    else if (updated[qIndex].correctIdx > optIndex) updated[qIndex].correctIdx--;
-    setQuestions(updated);
-  };
-
-  const removeQuestion = (qIndex) => {
-    setQuestions(questions.filter((_, i) => i !== qIndex));
-  };
-
-  // --- Quiz Actions ---
-  const startQuiz = () => {
-    if (questions.length === 0) return alert("Please add questions first!");
-    setCurrentQ(0);
-    setUserAnswers({});
-    setQuizStartTime(Date.now());
-    setStep('quiz');
-  };
-
-  const handleSelectAnswer = (optIndex) => {
-    setUserAnswers({ ...userAnswers, [currentQ]: optIndex });
-  };
-
-  const submitQuiz = () => {
-    setTimeTaken(Math.floor((Date.now() - quizStartTime) / 1000));
-    setStep('results');
-  };
-
-  const nextQuestion = () => {
-    if (currentQ < questions.length - 1) {
-      setCurrentQ(currentQ + 1);
-    } else {
-      submitQuiz();
-    }
-  };
-
-  // --- Analytics Math ---
-  const score = questions.reduce((acc, q, idx) => userAnswers[idx] === q.correctIdx ? acc + 1 : acc, 0);
-  const totalQ = questions.length;
-  const accuracy = totalQ > 0 ? ((score / totalQ) * 100).toFixed(1) : 0;
-  const wrongAnswers = totalQ - score;
-  const avgTimePerQ = totalQ > 0 ? (timeTaken / totalQ).toFixed(1) : 0;
-  
-  const formatQuizTime = (seconds) => {
-      const m = Math.floor(seconds / 60);
-      const s = seconds % 60;
-      return m > 0 ? `${m}m ${s}s` : `${s}s`;
-  };
-
-  const panelBg = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100';
-
-  return (
-    <div className="max-w-4xl mx-auto pb-12">
-       <h2 className="text-3xl font-bold mb-6">Quizzer Maker</h2>
-       
-       {step === 'upload' && (
-         <div className={`p-12 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center text-center transition-colors ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-300'}`}>
-            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6" style={{ backgroundColor: `${colors.ibisPink}40`, color: colors.parisPink }}><Upload size={32} /></div>
-            <h3 className="text-2xl font-bold mb-2">Upload Test Bank</h3>
-            <p className="text-gray-500 mb-4 max-w-md">Upload a PDF of your textbook questions. The system will read all pages and automatically scrub out document watermarks to extract the items.</p>
-            
-            <div className={`p-4 mb-8 rounded-xl text-sm font-medium border ${darkMode ? 'bg-yellow-900/20 border-yellow-800/50 text-yellow-400' : 'bg-yellow-50 border-yellow-200 text-yellow-700'} max-w-lg`}>
-              <strong>Disclaimer:</strong> This feature is optimized exclusively for Test Bank Files that come in a standard PDF document format. Picture-taken exercises or scanned image PDFs are not supported.
-            </div>
-
-            <label className="px-8 py-4 rounded-xl text-white font-bold text-lg transition-all shadow-lg hover:shadow-xl cursor-pointer flex items-center gap-3" style={{ backgroundColor: colors.indigoChild }}>
-              Select PDF File
-              <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
-            </label>
-         </div>
-       )}
-
-       {step === 'scanning' && (
-          <div className="p-12 text-center">
-            <RefreshCw className="animate-spin mx-auto mb-4 text-[#a4a2cc]" size={40} />
-            <h3 className="text-xl font-bold">Extracting PDF Text... {progress}%</h3>
-            <p className="text-sm text-gray-500 mt-2">Processing all pages and filtering watermarks...</p>
-          </div>
-       )}
-       
-       {step === 'preview' && (
-         <div className={`p-8 rounded-3xl border shadow-sm ${panelBg}`}>
-            <div className={`flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6 border-b pb-4 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-              <div>
-                <h3 className="text-xl font-bold">Answer Key Setup ({questions.length} Items Found)</h3>
-                <p className="text-sm text-gray-500 mt-1">Review your questions. Click text to edit, add/remove choices, and click the circle to set the correct answer.</p>
-              </div>
-              <button onClick={startQuiz} className="px-8 py-3 rounded-xl text-white font-bold transition-transform hover:scale-105 active:scale-95 shadow-md whitespace-nowrap" style={{ backgroundColor: colors.parisPink }}>
-                Start Quiz
-              </button>
-            </div>
-
-            <div className={`p-4 mb-6 rounded-xl text-sm font-medium border ${darkMode ? 'bg-blue-900/20 border-blue-800/50 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
-              <strong>Note:</strong> Test banks often use bolding or highlights to indicate answers, which standard PDF extraction cannot read. <strong>Please cross-check and update the answers</strong> before starting.
-            </div>
-            
-            <div className="space-y-6">
-              {questions.map((q, qIdx) => (
-                <div key={q.id} className={`p-6 rounded-2xl border relative group ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50'}`}>
-                  
-                  <button onClick={() => removeQuestion(qIdx)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={18} /></button>
-
-                  <textarea 
-                    value={q.text}
-                    onChange={(e) => updateQuestionText(qIdx, e.target.value)}
-                    className={`w-[95%] bg-transparent font-bold mb-4 text-lg border-b border-dashed outline-none resize-none overflow-hidden focus:border-[#d86d9c] ${darkMode ? 'border-gray-600 text-white' : 'border-gray-300 text-gray-900'}`}
-                    rows={q.text.split('\n').length || 1}
-                  />
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                    {q.options.map((opt, optIdx) => {
-                      const isCorrect = q.correctIdx === optIdx;
-                      return (
-                        <div 
-                          key={optIdx} 
-                          className={`p-3 rounded-xl border-2 flex items-center gap-3 transition-all relative group/opt ${
-                            isCorrect 
-                              ? (darkMode ? 'border-green-500 bg-green-900/20' : 'border-green-500 bg-green-50')
-                              : (darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white')
-                          }`}
-                        >
-                           <div 
-                             onClick={() => handleSetCorrectAnswer(qIdx, optIdx)}
-                             className={`cursor-pointer w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 hover:scale-110 transition-transform ${isCorrect ? 'border-green-500 bg-green-500 text-white' : 'border-gray-400'}`}
-                           >
-                              {isCorrect && <CheckCircle2 size={14} />}
-                           </div>
-                           
-                           <input 
-                              type="text"
-                              value={opt}
-                              onChange={(e) => updateOptionText(qIdx, optIdx, e.target.value)}
-                              className={`flex-1 w-full bg-transparent border-b border-dashed outline-none focus:border-[#d86d9c] pr-6 ${isCorrect ? (darkMode ? 'font-bold text-green-400 border-green-800' : 'font-bold text-green-700 border-green-200') : (darkMode ? 'font-medium text-gray-300 border-gray-600' : 'font-medium text-gray-600 border-gray-300')}`}
-                           />
-
-                           <button onClick={() => removeOption(qIdx, optIdx)} className="absolute right-3 text-gray-400 hover:text-red-500 opacity-0 group-hover/opt:opacity-100 transition-opacity bg-transparent"><X size={14} /></button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <button onClick={() => addOption(qIdx)} className={`text-xs font-bold uppercase tracking-widest flex items-center gap-1 ${darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-800'}`}>
-                    <Plus size={14} /> Add Choice
-                  </button>
-                </div>
-              ))}
-            </div>
-         </div>
-       )}
-       
-       {step === 'quiz' && (
-          <div className="max-w-2xl mx-auto py-8">
-            <div className="flex justify-between items-center mb-8 text-gray-500 font-bold uppercase tracking-widest text-sm">
-               <span>Question {currentQ + 1} of {questions.length}</span>
-               <span style={{ color: colors.mauveMemento }}>Focus Mode</span>
-            </div>
-            
-            <div className={`p-8 rounded-3xl shadow-lg border mb-8 ${panelBg}`}>
-               <h3 className="text-2xl font-bold mb-8 leading-relaxed">{questions[currentQ].text}</h3>
-               
-               <div className="space-y-4 mb-8">
-                 {questions[currentQ].options.map((opt, optIdx) => {
-                   const isSelected = userAnswers[currentQ] === optIdx;
-                   return (
-                     <button 
-                       key={optIdx}
-                       onClick={() => handleSelectAnswer(optIdx)}
-                       className={`w-full text-left p-5 rounded-2xl border-2 transition-all font-medium text-lg ${
-                         isSelected 
-                          ? 'border-[#a76e9c] bg-[#a76e9c]/10 text-[#a76e9c] shadow-md' 
-                          : (darkMode ? 'border-gray-700 hover:border-gray-500 hover:bg-gray-800' : 'border-gray-200 hover:border-[#a76e9c]/50 hover:bg-gray-50')
-                       }`}
-                     >
-                       {opt}
-                     </button>
-                   );
-                 })}
-               </div>
-               
-               <div className="flex justify-end">
-                 <button 
-                   onClick={nextQuestion}
-                   disabled={userAnswers[currentQ] === undefined}
-                   className={`px-10 py-4 rounded-xl font-bold text-lg transition-all flex items-center gap-2 ${userAnswers[currentQ] === undefined ? (darkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed') : 'text-white shadow-lg hover:scale-105 active:scale-95'}`}
-                   style={userAnswers[currentQ] !== undefined ? { backgroundColor: colors.indigoChild } : {}}
-                 >
-                   {currentQ < questions.length - 1 ? 'Next Question' : 'Submit Quiz'}
-                 </button>
-               </div>
-            </div>
-          </div>
-       )}
-
-       {step === 'results' && (
-         <div className="space-y-8">
-            <div className={`p-10 rounded-3xl border shadow-sm ${panelBg}`}>
-              <div className="text-center mb-10">
-                <div className="w-24 h-24 mx-auto rounded-full mb-4 flex items-center justify-center shadow-inner border-4" style={{ backgroundColor: `${colors.creamsicle}30`, borderColor: colors.ibisPink }}>
-                  <Target size={40} style={{ color: colors.parisPink }} />
-                </div>
-                <h2 className="text-4xl font-black mb-2" style={{ color: colors.mauveMemento }}>Quiz Complete!</h2>
-                <p className="text-gray-500 font-medium">Review your performance analytics below.</p>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-                 <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                    <CheckCircle2 size={24} className="mx-auto mb-2 text-green-500" />
-                    <p className="text-3xl font-black">{score}</p>
-                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Correct</p>
-                 </div>
-                 <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                    <X size={24} className="mx-auto mb-2 text-red-500" />
-                    <p className="text-3xl font-black">{wrongAnswers}</p>
-                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Mistakes</p>
-                 </div>
-                 <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                    <PieChart size={24} className="mx-auto mb-2 text-blue-500" />
-                    <p className="text-3xl font-black">{accuracy}%</p>
-                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Accuracy</p>
-                 </div>
-                 <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                    <TimerIcon size={24} className="mx-auto mb-2 text-purple-500" />
-                    <p className="text-3xl font-black">{formatQuizTime(timeTaken)}</p>
-                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Time Taken</p>
-                 </div>
-              </div>
-              
-              <div className="text-center text-sm font-medium text-gray-500 mb-10">
-                 <p>Average Pace: <strong className={darkMode ? 'text-white' : 'text-black'}>{avgTimePerQ} seconds</strong> per question.</p>
-              </div>
-
-              <div className="flex justify-center gap-4">
-                <button onClick={() => setStep('upload')} className={`px-6 py-3 rounded-xl font-bold border-2 transition-colors ${darkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                  Upload New Quiz
-                </button>
-                <button onClick={startQuiz} className="px-8 py-3 rounded-xl font-bold text-white shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5" style={{ backgroundColor: colors.parisPink }}>
-                  Retake Quiz
-                </button>
-              </div>
-            </div>
-
-            <div className={`p-10 rounded-3xl border shadow-sm ${panelBg}`}>
-              <h4 className={`font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2 mb-6 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>Item Review</h4>
-              <div className="space-y-4">
-                {questions.map((q, idx) => {
-                  const isCorrect = userAnswers[idx] === q.correctIdx;
-                  return (
-                    <div key={idx} className={`p-4 rounded-2xl border flex flex-col md:flex-row gap-4 items-start md:items-center ${isCorrect ? (darkMode ? 'bg-green-900/10 border-green-800' : 'bg-green-50/50 border-green-200') : (darkMode ? 'bg-red-900/10 border-red-800' : 'bg-red-50/50 border-red-200')}`}>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white ${isCorrect ? 'bg-green-500' : 'bg-red-500'}`}>
-                          {isCorrect ? <CheckCircle2 size={16} /> : <X size={16} />}
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium mb-1">{q.text}</p>
-                          <div className="text-sm">
-                            {!isCorrect && (
-                              <p className={`mb-0.5 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Your answer: <span className="font-semibold">{q.options[userAnswers[idx]] || 'No answer'}</span></p>
-                            )}
-                            <p className={darkMode ? 'text-green-400' : 'text-green-600'}>Correct answer: <span className="font-semibold">{q.options[q.correctIdx]}</span></p>
-                          </div>
-                        </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-         </div>
-       )}
     </div>
   );
 }
