@@ -32,7 +32,7 @@ const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 const db = getFirestore(app);
 
-// --- Helper Hook ---
+// --- Helper Hook (Local Storage Persistence) ---
 function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {
     try {
@@ -72,8 +72,8 @@ export default function App() {
   const [darkMode, setDarkMode] = useLocalStorage('xeia_darkmode', false);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // App States
-  const [profile, setProfile] = useState({ 
+  // App States (FIXED: Now all properly connected to Local Storage for Guest Mode)
+  const [profile, setProfile] = useLocalStorage('xeia_profile', { 
     name: 'Xeia', 
     gender: '', 
     age: '', 
@@ -83,18 +83,18 @@ export default function App() {
     passerDate: '2026-05', 
     currentStatus: profileStatuses[5] 
   });
-  const [tasks, setTasks] = useState([]);
-  const [subjects, setSubjects] = useState([]);
-  const [schedule, setSchedule] = useState([]);
-  const [notes, setNotes] = useState([]);
-  const [gradesData, setGradesData] = useState({}); 
-  const [calendarEvents, setCalendarEvents] = useState([]);
-  const [streak, setStreak] = useState(0);
-  const [totalDaysLogged, setTotalDaysLogged] = useState(0);
-  const [activityData, setActivityData] = useState(Array.from({ length: 42 }, () => 0));
-  const [studyLogs, setStudyLogs] = useState([]); 
+  const [tasks, setTasks] = useLocalStorage('xeia_tasks', []);
+  const [subjects, setSubjects] = useLocalStorage('xeia_subjects', []);
+  const [schedule, setSchedule] = useLocalStorage('xeia_schedule', []);
+  const [notes, setNotes] = useLocalStorage('xeia_notes', []);
+  const [gradesData, setGradesData] = useLocalStorage('xeia_grades', {}); 
+  const [calendarEvents, setCalendarEvents] = useLocalStorage('xeia_calendar', []);
+  const [streak, setStreak] = useLocalStorage('xeia_streak', 0);
+  const [totalDaysLogged, setTotalDaysLogged] = useLocalStorage('xeia_totalDays', 0);
+  const [activityData, setActivityData] = useLocalStorage('xeia_activity', Array.from({ length: 42 }, () => 0));
+  const [studyLogs, setStudyLogs] = useLocalStorage('xeia_studyLogs', []); 
 
-  const [quotes, setQuotes] = useState([
+  const [quotes, setQuotes] = useLocalStorage('xeia_quotes', [
     "Assets = Liabilities + Equity, and Hard Work = Success.",
     "Audit your habits, tax your distractions.",
   ]);
@@ -1545,7 +1545,7 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   );
 }
 
-// --- Quizzer View (PDF Extraction + Editable Items + Watermark Filter + Analytics) ---
+// --- Quizzer View ---
 function QuizzerView({ darkMode, colors }) {
   const [step, setStep] = useState('upload'); 
   const [isScanning, setIsScanning] = useState(false);
@@ -1569,10 +1569,9 @@ function QuizzerView({ darkMode, colors }) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         
-        // Remove watermarks using REGEX replace so we don't drop the entire line of choices
         const pageText = textContent.items.map(item => item.str).join(' ')
           .replace(/downloaded by[^\n]*/ig, '')
-          .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '') // strip emails
+          .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '') 
           .replace(/studocu/ig, '')
           .replace(/page\s*\d+/ig, '')
           .replace(/granof[^\n]*/ig, '')
@@ -1616,9 +1615,19 @@ function QuizzerView({ darkMode, colors }) {
   };
 
   const parseTextIntoQuestions = (rawText) => {
+    const junkFilters = [
+      /downloaded by/i,
+      /studocu/i,
+      /iomoarcpsd/i,
+      /testbank/i,
+      /page\s*\d+/i,
+      /granof/i 
+    ];
+
     const lines = rawText.split('\n')
       .map(line => line.trim())
-      .filter(line => line.length > 0);
+      .filter(line => line.length > 0)
+      .filter(line => !junkFilters.some(regex => regex.test(line)));
 
     let parsedQuestions = [];
     let currentQuestion = null;
@@ -1773,7 +1782,6 @@ function QuizzerView({ darkMode, colors }) {
               {questions.map((q, qIdx) => (
                 <div key={q.id} className={`p-6 rounded-2xl border relative group ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50'}`}>
                   
-                  {/* Delete Question Button */}
                   <button onClick={() => removeQuestion(qIdx)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={18} /></button>
 
                   <textarea 
@@ -1868,7 +1876,6 @@ function QuizzerView({ darkMode, colors }) {
 
        {step === 'results' && (
          <div className="space-y-8">
-            {/* Analytics Dashboard */}
             <div className={`p-10 rounded-3xl border shadow-sm ${panelBg}`}>
               <div className="text-center mb-10">
                 <div className="w-24 h-24 mx-auto rounded-full mb-4 flex items-center justify-center shadow-inner border-4" style={{ backgroundColor: `${colors.creamsicle}30`, borderColor: colors.ibisPink }}>
@@ -1915,7 +1922,6 @@ function QuizzerView({ darkMode, colors }) {
               </div>
             </div>
 
-            {/* Answer Review */}
             <div className={`p-10 rounded-3xl border shadow-sm ${panelBg}`}>
               <h4 className={`font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2 mb-6 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>Item Review</h4>
               <div className="space-y-4">
