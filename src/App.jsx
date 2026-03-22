@@ -1,21 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Tesseract from 'tesseract.js';
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-import * as pdfjsLib from 'pdfjs-dist';
 import { 
   BookOpen, Calendar, CheckCircle2, Clock, LayoutDashboard, 
   Lightbulb, Moon, Settings, Sun, Target, TrendingUp, 
   Upload, Plus, Trash2, Calculator, ChevronLeft, ChevronRight, Quote, RefreshCw,
   Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Pause, ListTodo, CheckSquare, Cloud
 } from 'lucide-react';
-
-// Configure pdf.js worker using Vite's native URL handling
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.mjs',
-  import.meta.url
-).toString();
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
@@ -125,7 +117,6 @@ export default function App() {
     }
   }, [darkMode]);
 
-  // Daily Reset check
   useEffect(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     if (lastStudyDate !== todayStr && !isFrozen) {
@@ -206,7 +197,6 @@ export default function App() {
     });
   };
 
-  // Global Timer Execution
   useEffect(() => {
     let interval = null;
     if (timerIsRunning && timerTimeLeft > 0) {
@@ -509,7 +499,6 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       
-      {/* Cloud Sync Reminder Banner */}
       {user && (
         <div className={`p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border shadow-sm ${darkMode ? 'bg-blue-900/20 border-blue-800/50' : 'bg-blue-50 border-blue-200'}`}>
           <div className="flex items-center gap-3">
@@ -585,7 +574,6 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
         </div>
 
         <div className={streakCardStyle}>
-          {/* Reset Confirmation Overlay */}
           {showStreakConfirm && (
             <div className="absolute inset-0 z-50 bg-gray-900/95 flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
               <p className="text-white font-bold mb-6 text-base">Are you sure you want to reset your streak?</p>
@@ -1364,7 +1352,7 @@ function BrainstormView({ darkMode, colors, notes, setNotes }) {
   );
 }
 
-// --- Grades View (Reviewee mode tracks cumulative globally) ---
+// --- Grades View ---
 function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   const [mode, setMode] = useState('student');
   const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || '');
