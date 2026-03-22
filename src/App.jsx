@@ -8,7 +8,7 @@ import {
   BookOpen, Calendar, CheckCircle2, Clock, LayoutDashboard, 
   Lightbulb, Moon, Settings, Sun, Target, TrendingUp, 
   Upload, Plus, Trash2, Calculator, ChevronLeft, ChevronRight, Quote, RefreshCw,
-  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Timer as TimerIcon, Pause, ListTodo, CheckSquare
+  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Pause, ListTodo, CheckSquare, Cloud
 } from 'lucide-react';
 
 // Configure pdf.js worker using Vite's native URL handling
@@ -93,11 +93,11 @@ export default function App() {
   const [lastStudyDate, setLastStudyDate] = useLocalStorage('xeia_lastStudy', null);
   const [isFrozen, setIsFrozen] = useLocalStorage('xeia_isFrozen', true);
 
-  // Global Timer States (Keeps running when switching tabs)
+  // Global Timer States
   const [timerInitialTime, setTimerInitialTime] = useLocalStorage('xeia_timerInit', 25 * 60);
   const [timerTimeLeft, setTimerTimeLeft] = useLocalStorage('xeia_timerLeft', 25 * 60);
   const [timerSessionElapsed, setTimerSessionElapsed] = useLocalStorage('xeia_timerElapsed', 0);
-  const [timerIsRunning, setTimerIsRunning] = useState(false); // Does not persist across refresh to prevent ghost running
+  const [timerIsRunning, setTimerIsRunning] = useState(false); 
   const [timerMode, setTimerMode] = useLocalStorage('xeia_timerMode', 'focus');
   const [timerSubjectId, setTimerSubjectId] = useLocalStorage('xeia_timerSubj', '');
 
@@ -262,7 +262,7 @@ export default function App() {
       </aside>
 
       <main className="flex-1 p-8 overflow-y-auto">
-        {activeTab === 'dashboard' && <DashboardView darkMode={darkMode} profile={profile} setProfile={setProfile} tasks={tasks} subjects={subjects} setSubjects={setSubjects} streak={streak} setStreak={setStreak} totalDaysLogged={totalDaysLogged} activityData={activityData} studyLogs={studyLogs} colors={colors} paletteList={paletteList} quote={currentQuote} changeQuote={changeQuote} addQuote={addQuote} logStudyTime={logStudyTime} registerStudyDay={registerStudyDay} isFrozen={isFrozen} setIsFrozen={setIsFrozen} hasStudiedToday={hasStudiedToday} timerProps={{timerInitialTime, setTimerInitialTime, timerTimeLeft, setTimerTimeLeft, timerSessionElapsed, setTimerSessionElapsed, timerIsRunning, setTimerIsRunning, timerMode, setTimerMode, timerSubjectId, setTimerSubjectId}} />}
+        {activeTab === 'dashboard' && <DashboardView user={user} darkMode={darkMode} profile={profile} setProfile={setProfile} tasks={tasks} subjects={subjects} setSubjects={setSubjects} streak={streak} setStreak={setStreak} totalDaysLogged={totalDaysLogged} setTotalDaysLogged={setTotalDaysLogged} activityData={activityData} studyLogs={studyLogs} colors={colors} paletteList={paletteList} quote={currentQuote} changeQuote={changeQuote} addQuote={addQuote} logStudyTime={logStudyTime} registerStudyDay={registerStudyDay} isFrozen={isFrozen} setIsFrozen={setIsFrozen} hasStudiedToday={hasStudiedToday} timerProps={{timerInitialTime, setTimerInitialTime, timerTimeLeft, setTimerTimeLeft, timerSessionElapsed, setTimerSessionElapsed, timerIsRunning, setTimerIsRunning, timerMode, setTimerMode, timerSubjectId, setTimerSubjectId}} />}
         {activeTab === 'tasks' && <TasksView darkMode={darkMode} tasks={tasks} setTasks={setTasks} subjects={subjects} colors={colors} />}
         {activeTab === 'schedule' && <ScheduleView darkMode={darkMode} colors={colors} subjects={subjects} schedule={schedule} setSchedule={setSchedule} />}
         {activeTab === 'quizzer' && <QuizzerView darkMode={darkMode} colors={colors} />}
@@ -451,13 +451,14 @@ function ProfileView({ darkMode, colors, profile, setProfile, statuses }) {
 }
 
 // --- Dashboard View ---
-function DashboardView({ darkMode, profile, setProfile, tasks, subjects, setSubjects, streak, setStreak, totalDaysLogged, activityData, studyLogs, colors, paletteList, quote, changeQuote, addQuote, logStudyTime, registerStudyDay, isFrozen, setIsFrozen, hasStudiedToday, timerProps }) {
+function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, setSubjects, streak, setStreak, totalDaysLogged, setTotalDaysLogged, activityData, studyLogs, colors, paletteList, quote, changeQuote, addQuote, logStudyTime, registerStudyDay, isFrozen, setIsFrozen, hasStudiedToday, timerProps }) {
   const cardStyle = `p-6 rounded-3xl shadow-sm border transition-colors ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`;
   
   const [editingSubjectId, setEditingSubjectId] = useState(null);
   const [editSubjectName, setEditSubjectName] = useState('');
   const [isAddingQuote, setIsAddingQuote] = useState(false);
   const [newQuoteText, setNewQuoteText] = useState('');
+  const [showStreakConfirm, setShowStreakConfirm] = useState(false);
 
   const subjectStats = subjects.map(sub => {
     const subTasks = tasks.filter(t => t.subjectId === sub.id);
@@ -502,11 +503,27 @@ function DashboardView({ darkMode, profile, setProfile, tasks, subjects, setSubj
   }
 
   const streakCardStyle = isFrozen 
-    ? `col-span-1 md:col-span-3 p-6 rounded-3xl shadow-sm border transition-colors flex flex-col items-center justify-center text-center relative ${darkMode ? 'bg-slate-800 border-blue-900 shadow-[inset_0_0_30px_rgba(30,58,138,0.2)]' : 'bg-[#f0f7ff] border-blue-100 shadow-[inset_0_0_30px_rgba(219,234,254,0.6)]'}`
-    : `col-span-1 md:col-span-3 ${cardStyle} flex flex-col items-center justify-center text-center relative`;
+    ? `col-span-1 md:col-span-3 p-6 rounded-3xl shadow-sm border transition-colors flex flex-col items-center justify-center text-center relative overflow-hidden ${darkMode ? 'bg-slate-800 border-blue-900 shadow-[inset_0_0_30px_rgba(30,58,138,0.2)]' : 'bg-[#f0f7ff] border-blue-100 shadow-[inset_0_0_30px_rgba(219,234,254,0.6)]'}`
+    : `col-span-1 md:col-span-3 ${cardStyle} flex flex-col items-center justify-center text-center relative overflow-hidden`;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      
+      {/* Cloud Sync Reminder Banner */}
+      {user && (
+        <div className={`p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border shadow-sm ${darkMode ? 'bg-blue-900/20 border-blue-800/50' : 'bg-blue-50 border-blue-200'}`}>
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-full ${darkMode ? 'bg-blue-800/50 text-blue-400' : 'bg-blue-200/50 text-blue-600'}`}>
+              <Cloud size={20} />
+            </div>
+            <div>
+              <p className={`font-bold text-sm ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>Don't lose your progress!</p>
+              <p className={`text-xs mt-0.5 ${darkMode ? 'text-blue-300/80' : 'text-blue-600/80'}`}>You are logged in via Google. Always click <strong>Sync to Cloud</strong> in the sidebar before leaving.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="flex justify-between items-end mb-8">
         <div className="flex-1">
           <h2 className="text-3xl font-bold mb-1">Welcome back, {profile.name}!</h2>
@@ -568,7 +585,29 @@ function DashboardView({ darkMode, profile, setProfile, tasks, subjects, setSubj
         </div>
 
         <div className={streakCardStyle}>
-          <button onClick={() => { setIsFrozen(true); setHasStudiedToday(false); }} className="absolute top-4 left-4 text-xs opacity-0 hover:opacity-50 transition-opacity cursor-pointer">❄️</button>
+          {/* Reset Confirmation Overlay */}
+          {showStreakConfirm && (
+            <div className="absolute inset-0 z-50 bg-gray-900/95 flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
+              <p className="text-white font-bold mb-6 text-base">Are you sure you want to reset your streak?</p>
+              <div className="flex flex-col w-full gap-3">
+                <button 
+                  onClick={() => { setStreak(0); setTotalDaysLogged(0); setIsFrozen(true); setShowStreakConfirm(false); }} 
+                  className="w-full py-2.5 rounded-xl font-bold text-xs bg-red-500 text-white hover:bg-red-600 transition-colors shadow-lg"
+                >
+                  Yes, ready for academic reset
+                </button>
+                <button 
+                  onClick={() => setShowStreakConfirm(false)} 
+                  className="w-full py-2.5 rounded-xl font-bold text-xs bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button onClick={() => setShowStreakConfirm(true)} className="absolute top-4 left-4 text-xs font-bold text-gray-400 hover:text-red-500 transition-colors z-10">Reset</button>
+          
           <div className={`absolute top-4 right-4 text-xs font-bold px-2.5 py-1 rounded-lg shadow-sm border ${darkMode ? 'bg-gray-700 text-gray-300 border-gray-600' : 'bg-white text-gray-500 border-gray-200'}`}>Total Logged: {totalDaysLogged}</div>
           <div className="h-20 flex items-center justify-center mt-2 mb-2">
             {isFrozen ? <Snowflake size={iconSize} className={iconClass} /> : <Flame size={iconSize} className={iconClass} fill="currentColor" fillOpacity={0.2} />}
@@ -860,7 +899,7 @@ function ScheduleView({ darkMode, colors, subjects, schedule, setSchedule }) {
   const startEdit = (cls) => {
     setEditingId(cls.id);
     setNewSubj(cls.subjectId);
-    setNewDays(cls.days || (cls.day ? [cls.day] : ['Monday'])); // Fallback for old data structure
+    setNewDays(cls.days || (cls.day ? [cls.day] : ['Monday'])); 
     setNewStart(cls.startTime);
     setNewEnd(cls.endTime);
     setNewRoom(cls.room);
@@ -1006,7 +1045,6 @@ function TasksView({ darkMode, tasks, setTasks, subjects, colors }) {
   const todoTasks = tasks.filter(t => !t.completed);
   const doneTasks = tasks.filter(t => t.completed);
 
-  // Grouping logic for To-Do
   const todayStr = new Date().toISOString().split('T')[0];
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = tomorrow.toISOString().split('T')[0];
@@ -1020,7 +1058,6 @@ function TasksView({ darkMode, tasks, setTasks, subjects, colors }) {
       else if (t.deadline === tomorrowStr) groups.Tomorrow.push(t);
       else groups.Upcoming.push(t);
     });
-    // Sort each group by deadline
     Object.keys(groups).forEach(key => {
       groups[key].sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
     });
@@ -1327,7 +1364,7 @@ function BrainstormView({ darkMode, colors, notes, setNotes }) {
   );
 }
 
-// --- Grades View ---
+// --- Grades View (Reviewee mode tracks cumulative globally) ---
 function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   const [mode, setMode] = useState('student');
   const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || '');
