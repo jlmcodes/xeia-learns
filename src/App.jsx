@@ -2,12 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
+import * as pdfjsLib from 'pdfjs-dist';
 import { 
   BookOpen, Calendar, CheckCircle2, Clock, LayoutDashboard, 
   Lightbulb, Moon, Settings, Sun, Target, TrendingUp, 
   Upload, Plus, Trash2, Calculator, ChevronLeft, ChevronRight, Quote, RefreshCw,
-  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Pause, ListTodo, CheckSquare, Cloud
+  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Pause, ListTodo, CheckSquare, Cloud, AlertTriangle
 } from 'lucide-react';
+
+// ==========================================
+// CRITICAL FIX: Remote PDF Worker
+// This prevents Vercel from crashing the Quizzer Maker tab by bypassing local build limits.
+// ==========================================
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
@@ -58,13 +65,41 @@ const profileStatuses = [
     { text: 'Hopeful', icon: '🙏' },
 ];
 
-// --- Main Application Component ---
+// ==========================================
+// ERROR BOUNDARY (Prevents White Screen of Death)
+// ==========================================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-12 text-center flex flex-col items-center justify-center h-full">
+          <AlertTriangle size={64} className="text-red-500 mb-4" />
+          <h2 className="text-2xl font-bold mb-2">Oops! Something went wrong in this tab.</h2>
+          <p className="text-gray-500 mb-6 max-w-md">An unexpected error occurred while loading this view. Please try returning to the dashboard or refreshing the page.</p>
+          <button onClick={() => window.location.reload()} className="px-6 py-3 bg-[#d86d9c] text-white rounded-xl font-bold hover:opacity-90">Reload Page</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ==========================================
+// MAIN APPLICATION SHELL
+// ==========================================
 export default function App() {
   const [user, setUser] = useState(null);
   const [darkMode, setDarkMode] = useLocalStorage('xeia_darkmode', false);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // App States
+  // Core Data States
   const [profile, setProfile] = useLocalStorage('xeia_profile', { 
     name: 'Xeia', gender: '', age: '', yearLevel: 'Reviewee', 
     subtitle: "Let's crush those CPA goals today.", photo: '', 
@@ -85,7 +120,7 @@ export default function App() {
   const [lastStudyDate, setLastStudyDate] = useLocalStorage('xeia_lastStudy', null);
   const [isFrozen, setIsFrozen] = useLocalStorage('xeia_isFrozen', true);
 
-  // Global Timer States
+  // Global Timer States (Keeps running when switching tabs)
   const [timerInitialTime, setTimerInitialTime] = useLocalStorage('xeia_timerInit', 25 * 60);
   const [timerTimeLeft, setTimerTimeLeft] = useLocalStorage('xeia_timerLeft', 25 * 60);
   const [timerSessionElapsed, setTimerSessionElapsed] = useLocalStorage('xeia_timerElapsed', 0);
@@ -99,6 +134,7 @@ export default function App() {
   ]);
   const [currentQuote, setCurrentQuote] = useState(quotes[0]);
 
+  // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -107,6 +143,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Dark Mode Applicator
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -117,6 +154,7 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Daily Reset check
   useEffect(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     if (lastStudyDate !== todayStr && !isFrozen) {
@@ -126,16 +164,7 @@ export default function App() {
 
   const hasStudiedToday = lastStudyDate === new Date().toISOString().split('T')[0] && !isFrozen;
 
-  const registerStudyDay = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    if (lastStudyDate !== todayStr || isFrozen) {
-      setLastStudyDate(todayStr);
-      setIsFrozen(false);
-      setStreak(s => s + 1);
-      setTotalDaysLogged(t => t + 1);
-    }
-  };
-
+  // Cloud Database Handlers
   const saveToCloud = async () => {
     if (!user) return alert("Sign in with Google to sync!");
     try {
@@ -168,15 +197,9 @@ export default function App() {
     }
   };
 
-  const changeQuote = () => {
-    const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
-    setCurrentQuote(randomQuote);
-  };
-
-  const addQuote = (newQuote) => {
-    setQuotes([...quotes, newQuote]);
-    setCurrentQuote(newQuote);
-  };
+  // Helper Actions
+  const changeQuote = () => setCurrentQuote(quotes[Math.floor(Math.random() * quotes.length)]);
+  const addQuote = (newQuote) => { setQuotes([...quotes, newQuote]); setCurrentQuote(newQuote); };
 
   const logStudyTime = (minutes, subjectId) => {
     if (minutes <= 0) return;
@@ -197,6 +220,17 @@ export default function App() {
     });
   };
 
+  const registerStudyDay = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (lastStudyDate !== todayStr || isFrozen) {
+      setLastStudyDate(todayStr);
+      setIsFrozen(false);
+      setStreak(s => s + 1);
+      setTotalDaysLogged(t => t + 1);
+    }
+  };
+
+  // Global Timer Engine
   useEffect(() => {
     let interval = null;
     if (timerIsRunning && timerTimeLeft > 0) {
@@ -237,10 +271,10 @@ export default function App() {
         <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} mt-auto`}>
            <button onClick={user ? () => signOut(auth) : () => signInWithPopup(auth, googleProvider)} className={`flex items-center space-x-3 w-full p-3 rounded-lg transition-colors ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
             {user ? <LogOut size={20} /> : <LogIn size={20} />}
-            <span className="text-sm font-bold">{user ? user.displayName : 'Google Sign-in'}</span>
+            <span className="text-sm font-bold truncate">{user ? user.displayName : 'Google Sign-in'}</span>
           </button>
           {user && (
-            <button onClick={saveToCloud} className="mt-2 flex items-center justify-center space-x-2 w-full p-3 rounded-lg bg-green-500 text-white font-bold hover:bg-green-600">
+            <button onClick={saveToCloud} className="mt-2 flex items-center justify-center space-x-2 w-full p-3 rounded-lg bg-green-500 text-white font-bold hover:bg-green-600 transition-colors shadow-sm">
               <Save size={18} /> <span className="text-sm">Sync to Cloud</span>
             </button>
           )}
@@ -251,15 +285,17 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="flex-1 p-8 overflow-y-auto">
-        {activeTab === 'dashboard' && <DashboardView user={user} darkMode={darkMode} profile={profile} setProfile={setProfile} tasks={tasks} subjects={subjects} setSubjects={setSubjects} streak={streak} setStreak={setStreak} totalDaysLogged={totalDaysLogged} setTotalDaysLogged={setTotalDaysLogged} activityData={activityData} studyLogs={studyLogs} colors={colors} paletteList={paletteList} quote={currentQuote} changeQuote={changeQuote} addQuote={addQuote} logStudyTime={logStudyTime} registerStudyDay={registerStudyDay} isFrozen={isFrozen} setIsFrozen={setIsFrozen} hasStudiedToday={hasStudiedToday} timerProps={{timerInitialTime, setTimerInitialTime, timerTimeLeft, setTimerTimeLeft, timerSessionElapsed, setTimerSessionElapsed, timerIsRunning, setTimerIsRunning, timerMode, setTimerMode, timerSubjectId, setTimerSubjectId}} />}
-        {activeTab === 'tasks' && <TasksView darkMode={darkMode} tasks={tasks} setTasks={setTasks} subjects={subjects} colors={colors} />}
-        {activeTab === 'schedule' && <ScheduleView darkMode={darkMode} colors={colors} subjects={subjects} schedule={schedule} setSchedule={setSchedule} />}
-        {activeTab === 'quizzer' && <QuizzerView darkMode={darkMode} colors={colors} />}
-        {activeTab === 'brainstorm' && <BrainstormView darkMode={darkMode} colors={colors} notes={notes} setNotes={setNotes} />}
-        {activeTab === 'grades' && <GradesView darkMode={darkMode} colors={colors} subjects={subjects} gradesData={gradesData} setGradesData={setGradesData} />}
-        {activeTab === 'calendar' && <CalendarView darkMode={darkMode} colors={colors} tasks={tasks} subjects={subjects} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} />}
-        {activeTab === 'profile' && <ProfileView darkMode={darkMode} colors={colors} profile={profile} setProfile={setProfile} statuses={profileStatuses} />}
+      <main className="flex-1 p-8 overflow-y-auto relative">
+        <ErrorBoundary>
+          {activeTab === 'dashboard' && <DashboardView user={user} darkMode={darkMode} profile={profile} setProfile={setProfile} tasks={tasks} subjects={subjects} setSubjects={setSubjects} streak={streak} setStreak={setStreak} totalDaysLogged={totalDaysLogged} setTotalDaysLogged={setTotalDaysLogged} activityData={activityData} studyLogs={studyLogs} colors={colors} paletteList={paletteList} quote={currentQuote} changeQuote={changeQuote} addQuote={addQuote} logStudyTime={logStudyTime} registerStudyDay={registerStudyDay} isFrozen={isFrozen} setIsFrozen={setIsFrozen} hasStudiedToday={hasStudiedToday} timerProps={{timerInitialTime, setTimerInitialTime, timerTimeLeft, setTimerTimeLeft, timerSessionElapsed, setTimerSessionElapsed, timerIsRunning, setTimerIsRunning, timerMode, setTimerMode, timerSubjectId, setTimerSubjectId}} />}
+          {activeTab === 'tasks' && <TasksView darkMode={darkMode} tasks={tasks} setTasks={setTasks} subjects={subjects} colors={colors} />}
+          {activeTab === 'schedule' && <ScheduleView darkMode={darkMode} colors={colors} subjects={subjects} schedule={schedule} setSchedule={setSchedule} />}
+          {activeTab === 'quizzer' && <QuizzerView darkMode={darkMode} colors={colors} />}
+          {activeTab === 'brainstorm' && <BrainstormView darkMode={darkMode} colors={colors} notes={notes} setNotes={setNotes} />}
+          {activeTab === 'grades' && <GradesView darkMode={darkMode} colors={colors} subjects={subjects} gradesData={gradesData} setGradesData={setGradesData} />}
+          {activeTab === 'calendar' && <CalendarView darkMode={darkMode} colors={colors} tasks={tasks} subjects={subjects} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} />}
+          {activeTab === 'profile' && <ProfileView darkMode={darkMode} colors={colors} profile={profile} setProfile={setProfile} statuses={profileStatuses} />}
+        </ErrorBoundary>
       </main>
     </div>
   );
@@ -499,6 +535,7 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       
+      {/* Cloud Sync Reminder Banner */}
       {user && (
         <div className={`p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border shadow-sm ${darkMode ? 'bg-blue-900/20 border-blue-800/50' : 'bg-blue-50 border-blue-200'}`}>
           <div className="flex items-center gap-3">
@@ -1013,7 +1050,7 @@ function ScheduleView({ darkMode, colors, subjects, schedule, setSchedule }) {
 
 // --- Tasks To-Do View ---
 function TasksView({ darkMode, tasks, setTasks, subjects, colors }) {
-  const [tab, setTab] = useState('todo'); // 'todo' | 'done'
+  const [tab, setTab] = useState('todo'); 
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newSubjectId, setNewSubjectId] = useState(subjects[0]?.id || '');
   const [newDeadline, setNewDeadline] = useState(new Date().toISOString().split('T')[0]);
@@ -1541,7 +1578,7 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
                       <input type="number" value={item.weight} onChange={e => handleStudentChange('midterms', item.id, 'weight', e.target.value)} className={`w-12 px-1 sm:px-2 py-2 text-center rounded-lg border text-sm ${inputBg}`} />
                       <span className="text-gray-400 font-bold text-xs">%</span>
                     </div>
-                    <button onClick={() => removeStudentItem('midterms', item.id)} className="text-gray-400 hover:text-red-500 transition-colors ml-1"><Trash2 size={18}/></button>
+                    <button onClick={() => removeStudentItem('midterms', item.id)} className="text-gray-400 hover:text-red-50 transition-colors ml-1"><Trash2 size={18}/></button>
                   </div>
                 ))}
               </div>
