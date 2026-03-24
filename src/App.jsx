@@ -2,13 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-// Removed pdfjs-dist import to prevent Vercel build crashes
+import * as pdfjsLib from 'pdfjs-dist';
 import { 
   BookOpen, Calendar, CheckCircle2, Clock, LayoutDashboard, 
   Lightbulb, Moon, Settings, Sun, Target, TrendingUp, 
   Upload, Plus, Trash2, Calculator, ChevronLeft, ChevronRight, Quote, RefreshCw,
-  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Pause
+  Edit2, Flame, Snowflake, Save, X, ArrowUp, ArrowDown, User, MapPin, UserCircle, Briefcase, LogIn, LogOut, BarChart3, Camera, PieChart, Pause, ListTodo, CheckSquare, Cloud, AlertTriangle
 } from 'lucide-react';
+
+// ==========================================
+// CRITICAL FIX: Remote PDF Worker
+// This prevents Vercel from crashing the Quizzer Maker tab by bypassing local build limits.
+// ==========================================
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
@@ -74,9 +80,9 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="p-12 text-center flex flex-col items-center justify-center h-full">
-          <X size={64} className="text-red-500 mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Oops! Something went wrong.</h2>
-          <p className="text-gray-500 mb-6 max-w-md">An unexpected error occurred while loading this view.</p>
+          <AlertTriangle size={64} className="text-red-500 mb-4" />
+          <h2 className="text-2xl font-bold mb-2">Oops! Something went wrong in this tab.</h2>
+          <p className="text-gray-500 mb-6 max-w-md">An unexpected error occurred while loading this view. Please try returning to the dashboard or refreshing the page.</p>
           <button onClick={() => window.location.reload()} className="px-6 py-3 bg-[#d86d9c] text-white rounded-xl font-bold hover:opacity-90">Reload Page</button>
         </div>
       );
@@ -93,6 +99,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useLocalStorage('xeia_darkmode', false);
   const [activeTab, setActiveTab] = useState('dashboard');
   
+  // Core Data States
   const [profile, setProfile] = useLocalStorage('xeia_profile', { 
     name: 'Xeia', gender: '', age: '', yearLevel: 'Reviewee', 
     subtitle: "Let's crush those CPA goals today.", photo: '', 
@@ -105,6 +112,7 @@ export default function App() {
   const [gradesData, setGradesData] = useLocalStorage('xeia_grades', {}); 
   const [calendarEvents, setCalendarEvents] = useLocalStorage('xeia_calendar', []);
   
+  // Streak & Daily Reset Logic
   const [streak, setStreak] = useLocalStorage('xeia_streak', 0);
   const [totalDaysLogged, setTotalDaysLogged] = useLocalStorage('xeia_totalDays', 0);
   const [activityData, setActivityData] = useLocalStorage('xeia_activity', Array.from({ length: 42 }, () => 0));
@@ -112,6 +120,7 @@ export default function App() {
   const [lastStudyDate, setLastStudyDate] = useLocalStorage('xeia_lastStudy', null);
   const [isFrozen, setIsFrozen] = useLocalStorage('xeia_isFrozen', true);
 
+  // Global Timer States (Keeps running when switching tabs)
   const [timerInitialTime, setTimerInitialTime] = useLocalStorage('xeia_timerInit', 25 * 60);
   const [timerTimeLeft, setTimerTimeLeft] = useLocalStorage('xeia_timerLeft', 25 * 60);
   const [timerSessionElapsed, setTimerSessionElapsed] = useLocalStorage('xeia_timerElapsed', 0);
@@ -125,6 +134,7 @@ export default function App() {
   ]);
   const [currentQuote, setCurrentQuote] = useState(quotes[0]);
 
+  // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -133,6 +143,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Dark Mode Applicator
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -143,6 +154,7 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Daily Reset check
   useEffect(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     if (lastStudyDate !== todayStr && !isFrozen) {
@@ -152,6 +164,7 @@ export default function App() {
 
   const hasStudiedToday = lastStudyDate === new Date().toISOString().split('T')[0] && !isFrozen;
 
+  // Cloud Database Handlers
   const saveToCloud = async () => {
     if (!user) return alert("Sign in with Google to sync!");
     try {
@@ -184,6 +197,7 @@ export default function App() {
     }
   };
 
+  // Helper Actions
   const changeQuote = () => setCurrentQuote(quotes[Math.floor(Math.random() * quotes.length)]);
   const addQuote = (newQuote) => { setQuotes([...quotes, newQuote]); setCurrentQuote(newQuote); };
 
@@ -216,6 +230,7 @@ export default function App() {
     }
   };
 
+  // Global Timer Engine
   useEffect(() => {
     let interval = null;
     if (timerIsRunning && timerTimeLeft > 0) {
@@ -525,7 +540,7 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
         <div className={`p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border shadow-sm ${darkMode ? 'bg-blue-900/20 border-blue-800/50' : 'bg-blue-50 border-blue-200'}`}>
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-full ${darkMode ? 'bg-blue-800/50 text-blue-400' : 'bg-blue-200/50 text-blue-600'}`}>
-              <Upload size={20} />
+              <Cloud size={20} />
             </div>
             <div>
               <p className={`font-bold text-sm ${darkMode ? 'text-blue-400' : 'text-blue-700'}`}>Don't lose your progress!</p>
@@ -1106,8 +1121,8 @@ function TasksView({ darkMode, tasks, setTasks, subjects, colors }) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <h2 className="text-3xl font-bold">Tasks</h2>
         <div className={`flex space-x-1 p-1 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
-           <button onClick={() => setTab('todo')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'todo' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><BookOpen size={16} /> To-Do</button>
-           <button onClick={() => setTab('done')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'done' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><CheckCircle2 size={16} /> Completed</button>
+           <button onClick={() => setTab('todo')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'todo' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><ListTodo size={16} /> To-Do</button>
+           <button onClick={() => setTab('done')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === 'done' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}><CheckSquare size={16} /> Completed</button>
         </div>
       </div>
 
@@ -1382,6 +1397,8 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
   const midterms = gradesData[selectedSubjectId]?.midterms || [];
   const finals = gradesData[selectedSubjectId]?.finals || [];
   
+  const termWeights = gradesData[selectedSubjectId]?.termWeights || { midterms: 50, finals: 50 };
+
   const revieweeLogs = gradesData.globalRevieweeLogs || [];
 
   const updateSubjectGrades = (term, data) => {
@@ -1391,6 +1408,17 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
       [selectedSubjectId]: {
         ...(gradesData[selectedSubjectId] || {}),
         [term]: data
+      }
+    });
+  };
+
+  const handleWeightChange = (term, value) => {
+    if (!selectedSubjectId) return;
+    setGradesData({
+      ...gradesData,
+      [selectedSubjectId]: {
+        ...(gradesData[selectedSubjectId] || {}),
+        termWeights: { ...termWeights, [term]: Number(value) }
       }
     });
   };
@@ -1468,7 +1496,16 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
 
   const midPerc = calcSection(midterms);
   const finPerc = calcSection(finals);
-  const overallPerc = calcSection([...midterms, ...finals]);
+  
+  let overallPerc = 0;
+  if (midterms.length > 0 && finals.length > 0) {
+    const totalWeight = termWeights.midterms + termWeights.finals;
+    if (totalWeight > 0) overallPerc = ((midPerc * termWeights.midterms) + (finPerc * termWeights.finals)) / totalWeight;
+  } else if (midterms.length > 0) {
+    overallPerc = midPerc;
+  } else if (finals.length > 0) {
+    overallPerc = finPerc;
+  }
 
   let revObtained = 0; let revTotal = 0; let below65Count = 0;
   revieweeLogs.forEach(i => {
@@ -1495,16 +1532,13 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
 
   return (
     <div className="max-w-6xl mx-auto h-full flex flex-col space-y-6">
-      
       <div className="flex justify-between items-center flex-wrap gap-4 mb-2">
         <h2 className="text-3xl font-bold">Grade Computation</h2>
-        
         <div className="flex items-center gap-4 flex-wrap">
           <div className={`flex items-center gap-2 p-1.5 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
             <button onClick={() => setMode('student')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${mode === 'student' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}>Student</button>
             <button onClick={() => setMode('reviewee')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${mode === 'reviewee' ? (darkMode ? 'bg-gray-600 shadow-sm text-white' : 'bg-white shadow-sm text-gray-900') : 'text-gray-500'}`}>Reviewee</button>
           </div>
-
           {mode === 'student' && (
             <select value={selectedSubjectId} onChange={e => setSelectedSubjectId(e.target.value)} className={`${inputClass} min-w-[200px]`}>
               {subjects.length === 0 && <option value="">Add subjects first...</option>}
@@ -1523,15 +1557,33 @@ function GradesView({ darkMode, colors, subjects, gradesData, setGradesData }) {
       ) : mode === 'student' ? (
         <div className="space-y-6">
           <div className={`p-8 rounded-3xl shadow-sm border flex flex-col md:flex-row justify-between items-center gap-6 ${panelBg}`}>
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-6 flex-wrap justify-center">
               <div>
                 <h3 className="text-sm text-gray-500 font-medium uppercase tracking-wide">Overall Running Grade</h3>
                 <p className="text-5xl font-black mt-1" style={{ color: colors.mauveMemento }}>{overallPerc.toFixed(2)}%</p>
               </div>
-              <div className={`h-16 w-px mx-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}></div>
+              <div className={`hidden md:block h-16 w-px mx-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}></div>
               <div>
                 <h3 className="text-sm text-gray-500 font-medium uppercase tracking-wide mb-2">GWA Equivalent</h3>
                 <div className={`inline-block px-5 py-2 rounded-xl text-2xl font-black shadow-inner ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`} style={{ color: colors.parisPink }}>{interpretGrade(overallPerc)}</div>
+              </div>
+            </div>
+            
+            <div className={`flex items-center gap-4 p-4 rounded-2xl border ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Midterm Weight</label>
+                <div className="flex items-center gap-1">
+                  <input type="number" value={termWeights.midterms} onChange={e => handleWeightChange('midterms', e.target.value)} className={`w-16 px-2 py-1.5 text-center rounded-lg border text-sm font-bold ${inputBg}`} />
+                  <span className="text-gray-500 font-bold">%</span>
+                </div>
+              </div>
+              <div className={`h-8 w-px ${darkMode ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Finals Weight</label>
+                <div className="flex items-center gap-1">
+                  <input type="number" value={termWeights.finals} onChange={e => handleWeightChange('finals', e.target.value)} className={`w-16 px-2 py-1.5 text-center rounded-lg border text-sm font-bold ${inputBg}`} />
+                  <span className="text-gray-500 font-bold">%</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1706,7 +1758,6 @@ function QuizzerView({ darkMode, colors }) {
   const [quizStartTime, setQuizStartTime] = useState(null);
   const [timeTaken, setTimeTaken] = useState(0);
 
-  // Dynamic Injection of PDFJS to bypass Vercel restrictions
   const loadPdfJs = async () => {
     if (window.pdfjsLib) return window.pdfjsLib;
     return new Promise((resolve, reject) => {
@@ -1819,7 +1870,6 @@ function QuizzerView({ darkMode, colors }) {
     }];
   };
 
-  // --- Safe Immutability State Updates ---
   const updateQuestionText = (qIndex, newText) => {
     setQuestions(prev => prev.map((q, i) => i === qIndex ? { ...q, text: newText } : q));
   };
