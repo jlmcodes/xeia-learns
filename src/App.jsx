@@ -12,7 +12,6 @@ import {
 
 // ==========================================
 // CRITICAL FIX: Remote PDF Worker
-// This prevents Vercel from crashing the Quizzer Maker tab by bypassing local build limits.
 // ==========================================
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
@@ -120,7 +119,7 @@ export default function App() {
   const [lastStudyDate, setLastStudyDate] = useLocalStorage('xeia_lastStudy', null);
   const [isFrozen, setIsFrozen] = useLocalStorage('xeia_isFrozen', true);
 
-  // Global Timer States (Keeps running when switching tabs)
+  // Global Timer States
   const [timerInitialTime, setTimerInitialTime] = useLocalStorage('xeia_timerInit', 25 * 60);
   const [timerTimeLeft, setTimerTimeLeft] = useLocalStorage('xeia_timerLeft', 25 * 60);
   const [timerSessionElapsed, setTimerSessionElapsed] = useLocalStorage('xeia_timerElapsed', 0);
@@ -287,7 +286,7 @@ export default function App() {
 
       <main className="flex-1 p-8 overflow-y-auto relative">
         <ErrorBoundary>
-          {activeTab === 'dashboard' && <DashboardView user={user} darkMode={darkMode} profile={profile} setProfile={setProfile} tasks={tasks} subjects={subjects} setSubjects={setSubjects} streak={streak} setStreak={setStreak} totalDaysLogged={totalDaysLogged} setTotalDaysLogged={setTotalDaysLogged} activityData={activityData} studyLogs={studyLogs} colors={colors} paletteList={paletteList} quote={currentQuote} changeQuote={changeQuote} addQuote={addQuote} logStudyTime={logStudyTime} registerStudyDay={registerStudyDay} isFrozen={isFrozen} setIsFrozen={setIsFrozen} hasStudiedToday={hasStudiedToday} timerProps={{timerInitialTime, setTimerInitialTime, timerTimeLeft, setTimerTimeLeft, timerSessionElapsed, setTimerSessionElapsed, timerIsRunning, setTimerIsRunning, timerMode, setTimerMode, timerSubjectId, setTimerSubjectId}} />}
+          {activeTab === 'dashboard' && <DashboardView user={user} darkMode={darkMode} profile={profile} setProfile={setProfile} tasks={tasks} subjects={subjects} setSubjects={setSubjects} schedule={schedule} streak={streak} setStreak={setStreak} totalDaysLogged={totalDaysLogged} setTotalDaysLogged={setTotalDaysLogged} activityData={activityData} studyLogs={studyLogs} colors={colors} paletteList={paletteList} quote={currentQuote} changeQuote={changeQuote} addQuote={addQuote} logStudyTime={logStudyTime} registerStudyDay={registerStudyDay} isFrozen={isFrozen} setIsFrozen={setIsFrozen} hasStudiedToday={hasStudiedToday} timerProps={{timerInitialTime, setTimerInitialTime, timerTimeLeft, setTimerTimeLeft, timerSessionElapsed, setTimerSessionElapsed, timerIsRunning, setTimerIsRunning, timerMode, setTimerMode, timerSubjectId, setTimerSubjectId}} />}
           {activeTab === 'tasks' && <TasksView darkMode={darkMode} tasks={tasks} setTasks={setTasks} subjects={subjects} colors={colors} />}
           {activeTab === 'schedule' && <ScheduleView darkMode={darkMode} colors={colors} subjects={subjects} schedule={schedule} setSchedule={setSchedule} />}
           {activeTab === 'quizzer' && <QuizzerView darkMode={darkMode} colors={colors} />}
@@ -477,7 +476,7 @@ function ProfileView({ darkMode, colors, profile, setProfile, statuses }) {
 }
 
 // --- Dashboard View ---
-function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, setSubjects, streak, setStreak, totalDaysLogged, setTotalDaysLogged, activityData, studyLogs, colors, paletteList, quote, changeQuote, addQuote, logStudyTime, registerStudyDay, isFrozen, setIsFrozen, hasStudiedToday, timerProps }) {
+function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, setSubjects, schedule, streak, setStreak, totalDaysLogged, setTotalDaysLogged, activityData, studyLogs, colors, paletteList, quote, changeQuote, addQuote, logStudyTime, registerStudyDay, isFrozen, setIsFrozen, hasStudiedToday, timerProps }) {
   const cardStyle = `p-6 rounded-3xl shadow-sm border transition-colors ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`;
   
   const [editingSubjectId, setEditingSubjectId] = useState(null);
@@ -485,6 +484,18 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
   const [isAddingQuote, setIsAddingQuote] = useState(false);
   const [newQuoteText, setNewQuoteText] = useState('');
   const [showStreakConfirm, setShowStreakConfirm] = useState(false);
+  const [currentTimeStr, setCurrentTimeStr] = useState('');
+
+  // Live clock for Ongoing Classes checking
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentTimeStr(now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0'));
+    };
+    updateTime();
+    const intervalId = setInterval(updateTime, 60000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   const subjectStats = subjects.map(sub => {
     const subTasks = tasks.filter(t => t.subjectId === sub.id);
@@ -532,10 +543,15 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
     ? `col-span-1 md:col-span-3 p-6 rounded-3xl shadow-sm border transition-colors flex flex-col items-center justify-center text-center relative overflow-hidden ${darkMode ? 'bg-slate-800 border-blue-900 shadow-[inset_0_0_30px_rgba(30,58,138,0.2)]' : 'bg-[#f0f7ff] border-blue-100 shadow-[inset_0_0_30px_rgba(219,234,254,0.6)]'}`
     : `col-span-1 md:col-span-3 ${cardStyle} flex flex-col items-center justify-center text-center relative overflow-hidden`;
 
+  // Ongoing Class Logic
+  const todayDayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+  const todaysClasses = schedule
+    .filter(s => (s.days && s.days.includes(todayDayName)) || s.day === todayDayName)
+    .sort((a,b) => a.startTime.localeCompare(b.startTime));
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       
-      {/* Cloud Sync Reminder Banner */}
       {user && (
         <div className={`p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border shadow-sm ${darkMode ? 'bg-blue-900/20 border-blue-800/50' : 'bg-blue-50 border-blue-200'}`}>
           <div className="flex items-center gap-3">
@@ -568,10 +584,13 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-        <div className={`col-span-1 md:col-span-5 row-span-2 ${cardStyle} flex flex-col relative overflow-hidden p-0`}>
+        
+        {/* TIMER - Spans 3 rows vertically */}
+        <div className={`col-span-1 md:col-span-5 md:row-span-3 ${cardStyle} flex flex-col relative overflow-hidden p-0`}>
           <Timer darkMode={darkMode} logStudyTime={logStudyTime} colors={colors} subjects={subjects} studyLogs={studyLogs} timerProps={timerProps} />
         </div>
 
+        {/* SUBJECTS */}
         <div className={`col-span-1 md:col-span-4 ${cardStyle} flex flex-col`}>
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-bold tracking-wide uppercase text-sm flex items-center gap-2">
@@ -610,6 +629,7 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
           </div>
         </div>
 
+        {/* STREAK */}
         <div className={streakCardStyle}>
           {showStreakConfirm && (
             <div className="absolute inset-0 z-50 bg-gray-900/95 flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
@@ -645,6 +665,41 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
           </button>
         </div>
 
+        {/* TODAY'S SCHEDULE (ONGOING CLASS) WIDGET */}
+        <div className={`col-span-1 md:col-span-7 ${cardStyle} flex flex-col min-h-[160px]`}>
+          <h3 className="font-bold tracking-wide uppercase text-sm mb-4 flex items-center gap-2">
+            <Briefcase size={16} style={{ color: colors.indigoChild }}/> Today's Schedule
+          </h3>
+          {todaysClasses.length === 0 ? (
+            <p className="text-sm text-gray-400 italic text-center py-4 my-auto">No classes scheduled for today. Enjoy your free time!</p>
+          ) : (
+            <div className="space-y-3 flex-1 overflow-y-auto pr-2 max-h-[180px]">
+              {todaysClasses.map(cls => {
+                const subj = subjects.find(s => s.id === cls.subjectId) || { name: 'Unknown', color: '#ccc' };
+                const isOngoing = currentTimeStr >= cls.startTime && currentTimeStr <= cls.endTime;
+                const isPast = currentTimeStr > cls.endTime;
+
+                return (
+                  <div key={cls.id} className={`p-4 rounded-xl border flex items-center justify-between gap-4 transition-colors ${isOngoing ? (darkMode ? 'bg-green-900/20 border-green-500 shadow-[inset_0_0_15px_rgba(34,197,94,0.1)]' : 'bg-green-50 border-green-400 shadow-[inset_0_0_15px_rgba(34,197,94,0.15)]') : (darkMode ? 'bg-gray-700/30 border-gray-600' : 'bg-gray-50 border-gray-200')} ${isPast ? 'opacity-50' : ''}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-1.5 h-10 rounded-full`} style={{ backgroundColor: subj.color }}></div>
+                      <div>
+                        <h5 className={`font-bold text-sm ${isOngoing ? (darkMode ? 'text-green-400' : 'text-green-700') : ''}`}>{subj.name}</h5>
+                        <p className="text-xs text-gray-500 flex items-center gap-3 mt-1 font-medium">
+                          <span className="flex items-center gap-1"><Clock size={12}/> {cls.startTime} - {cls.endTime}</span>
+                          <span className="flex items-center gap-1"><MapPin size={12}/> {cls.room}</span>
+                        </p>
+                      </div>
+                    </div>
+                    {isOngoing && <span className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white bg-green-500 animate-pulse shadow-sm">Ongoing</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* QUOTES */}
         <div className={`col-span-1 md:col-span-4 ${cardStyle} relative flex flex-col justify-center min-h-[160px]`}>
            {isAddingQuote ? (
              <div className="flex flex-col h-full animate-in fade-in zoom-in duration-200">
@@ -667,10 +722,12 @@ function DashboardView({ user, darkMode, profile, setProfile, tasks, subjects, s
            )}
         </div>
 
+        {/* HEATMAP */}
         <div className={`col-span-1 md:col-span-3 ${cardStyle}`}>
           <h3 className="font-bold tracking-wide uppercase text-sm mb-4 flex items-center gap-2"><TrendingUp size={16} style={{ color: colors.indigoChild }}/> Activity</h3>
           <ActivityHeatmap colors={colors} darkMode={darkMode} activityData={activityData} />
         </div>
+
       </div>
     </div>
   );
